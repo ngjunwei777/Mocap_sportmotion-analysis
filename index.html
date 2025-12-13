@@ -86,6 +86,12 @@ without prior written permission from Ng Jun Wei.
     .btn-success{ background:#10b981; color:#fff; }
     .btn-danger { background:#ef4444; color:#fff; }
 
+    .btn-ghost{
+      background: rgba(102,126,234,0.12);
+      color:#3b4bd6;
+      font-weight: 1000;
+    }
+
     .status-message{
       display:none;
       text-align:center;
@@ -217,6 +223,49 @@ without prior written permission from Ng Jun Wei.
       box-shadow: 0 2px 10px rgba(0,0,0,0.06);
     }
 
+    /* Collapsible card header */
+    .card-head{
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .collapse-btn{
+      display:inline-flex;
+      align-items:center;
+      gap: 8px;
+      border:none;
+      cursor:pointer;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-weight: 1000;
+      background: rgba(102,126,234,0.12);
+      color:#3b4bd6;
+    }
+    .collapse-btn:active{ transform: translateY(1px); }
+    .collapse-icon{
+      width: 10px;
+      height: 10px;
+      border-right: 3px solid currentColor;
+      border-bottom: 3px solid currentColor;
+      transform: rotate(45deg);
+      transition: transform .18s ease;
+      margin-left: 2px;
+    }
+    .collapsed .collapse-icon{ transform: rotate(-45deg); }
+    .collapsible{
+      overflow: hidden;
+      transition: max-height .22s ease, opacity .22s ease;
+      max-height: 2000px;
+      opacity: 1;
+    }
+    .collapsed .collapsible{
+      max-height: 0px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
     footer{
       margin-top: 14px;
       text-align:center;
@@ -229,7 +278,6 @@ without prior written permission from Ng Jun Wei.
     .pip-toggle{ display:none; margin-top: 10px; }
 
     @media (max-width: 980px) {
-      /* sticky is unreliable on iOS inside grids; use PiP */
       .sticky{ position: static; }
       .pip-toggle{ display:inline-block; }
 
@@ -246,7 +294,7 @@ without prior written permission from Ng Jun Wei.
       }
 
       body.pip-on .container{
-        padding-bottom: 260px; /* space so PiP doesn't hide content */
+        padding-bottom: 270px;
       }
     }
 
@@ -264,7 +312,7 @@ without prior written permission from Ng Jun Wei.
 
 <body>
 <div class="container">
-  <h1>🏃‍♂️ Mocap Sport Analysis</h1>
+  <h1>🏃‍♂️ Sport Performance Analyzer</h1>
   <p class="subtitle">iOS-safe overlay • selectable metrics • joint-driven Force–Time & Moment–Time • projectile tracking</p>
 
   <div id="statusMessage" class="status-message"></div>
@@ -272,6 +320,8 @@ without prior written permission from Ng Jun Wei.
   <div class="layout">
     <!-- LEFT -->
     <div>
+
+      <!-- CARD 1: Participant + Camera -->
       <div class="card">
         <h3>Participant</h3>
 
@@ -358,42 +408,6 @@ without prior written permission from Ng Jun Wei.
 
         <div class="divider"></div>
 
-        <h3>Kinetics Driver (Selected Joint Kinematics)</h3>
-        <div class="form-grid">
-          <div>
-            <label for="kinJoint">Joint</label>
-            <select id="kinJoint">
-              <option value="shoulder">Shoulder</option>
-              <option value="elbow">Elbow</option>
-              <option value="wrist">Wrist</option>
-              <option value="hip" selected>Hip</option>
-              <option value="knee">Knee</option>
-              <option value="ankle">Ankle</option>
-              <option value="neck">Neck</option>
-            </select>
-          </div>
-          <div>
-            <label for="kinSide">Side</label>
-            <select id="kinSide">
-              <option value="R" selected>Right (R)</option>
-              <option value="L">Left (L)</option>
-            </select>
-          </div>
-          <div>
-            <label for="kinMode">Kinetics Model</label>
-            <select id="kinMode">
-              <option value="jointAccel" selected>Force from joint acceleration + Moment from segment α</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="mini">
-          Force–Time uses the selected joint’s <b>linear acceleration</b> with an effective segment mass fraction.
-          Moment–Time uses <b>segment inertia × angular acceleration</b>. (2D proxy, filtered.)
-        </div>
-
-        <div class="divider"></div>
-
         <h3>Projectile Tracking</h3>
         <div class="form-grid">
           <div>
@@ -432,48 +446,97 @@ without prior written permission from Ng Jun Wei.
         <button class="btn btn-primary pip-toggle" onclick="togglePiP()">📌 Pin Video (PiP)</button>
       </div>
 
+      <!-- CARD 2: Display Selector (COLLAPSIBLE, MOVED UP) -->
+      <div class="card collapsible-card" id="displaySelectorCard" style="margin-top: 12px;">
+        <div class="card-head">
+          <h3 style="margin:0;">Display Selector (Angles & Velocities)</h3>
+          <button class="collapse-btn" onclick="toggleCollapse('displaySelectorCard')" aria-expanded="true">
+            <span id="displaySelectorCard_lbl">Collapse</span>
+            <span class="collapse-icon" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="collapsible">
+          <div class="form-grid">
+            <div>
+              <label for="metricType">Metric</label>
+              <select id="metricType">
+                <option value="angle">Angle (°)</option>
+                <option value="angVel">Angular Velocity (°/s)</option>
+                <option value="linVel">Linear Velocity (m/s)</option>
+              </select>
+            </div>
+            <div>
+              <label for="metricJoint">Joint</label>
+              <select id="metricJoint">
+                <option value="shoulder">Shoulder</option>
+                <option value="elbow">Elbow</option>
+                <option value="wrist">Wrist</option>
+                <option value="hip">Hip</option>
+                <option value="knee">Knee</option>
+                <option value="ankle">Ankle</option>
+                <option value="neck">Neck</option>
+              </select>
+            </div>
+            <div>
+              <label for="metricSide">Side</label>
+              <select id="metricSide">
+                <option value="R">Right (R)</option>
+                <option value="L">Left (L)</option>
+              </select>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" onclick="addMetric()">Add to Display</button>
+          <button class="btn btn-danger" onclick="clearMetrics()">Clear</button>
+
+          <div class="chiplist" id="metricChips"></div>
+
+          <div class="divider"></div>
+
+          <h3>Selected Metrics (Real-time)</h3>
+          <div class="metrics-grid" id="selectedMetricsPanel"></div>
+        </div>
+      </div>
+
+      <!-- CARD 3: Kinetics Driver (MOVED DOWN) -->
       <div class="card" style="margin-top: 12px;">
-        <h3>Display Selector (Angles & Velocities)</h3>
+        <h3>Kinetics Driver (Selected Joint Kinematics)</h3>
         <div class="form-grid">
           <div>
-            <label for="metricType">Metric</label>
-            <select id="metricType">
-              <option value="angle">Angle (°)</option>
-              <option value="angVel">Angular Velocity (°/s)</option>
-              <option value="linVel">Linear Velocity (m/s)</option>
-            </select>
-          </div>
-          <div>
-            <label for="metricJoint">Joint</label>
-            <select id="metricJoint">
+            <label for="kinJoint">Joint</label>
+            <select id="kinJoint">
               <option value="shoulder">Shoulder</option>
               <option value="elbow">Elbow</option>
               <option value="wrist">Wrist</option>
-              <option value="hip">Hip</option>
+              <option value="hip" selected>Hip</option>
               <option value="knee">Knee</option>
               <option value="ankle">Ankle</option>
               <option value="neck">Neck</option>
             </select>
           </div>
           <div>
-            <label for="metricSide">Side</label>
-            <select id="metricSide">
-              <option value="R">Right (R)</option>
+            <label for="kinSide">Side</label>
+            <select id="kinSide">
+              <option value="R" selected>Right (R)</option>
               <option value="L">Left (L)</option>
             </select>
           </div>
+          <div>
+            <label for="kinMode">Kinetics Model</label>
+            <select id="kinMode">
+              <option value="jointAccel" selected>Force from joint acceleration + Moment from segment α</option>
+            </select>
+          </div>
         </div>
-        <button class="btn btn-primary" onclick="addMetric()">Add to Display</button>
-        <button class="btn btn-danger" onclick="clearMetrics()">Clear</button>
 
-        <div class="chiplist" id="metricChips"></div>
-
-        <div class="divider"></div>
-
-        <h3>Selected Metrics (Real-time)</h3>
-        <div class="metrics-grid" id="selectedMetricsPanel"></div>
+        <div class="mini">
+          Force–Time uses the selected joint’s <b>linear acceleration</b> with an effective segment mass fraction.
+          Moment–Time uses <b>segment inertia × angular acceleration</b>. (2D proxy, filtered.)
+        </div>
       </div>
 
+      <!-- CARD 4: Charts -->
       <div class="card" style="margin-top: 12px;">
         <h3>Kinetics Charts (Real-time)</h3>
         <div class="charts-grid">
@@ -495,6 +558,7 @@ without prior written permission from Ng Jun Wei.
         </div>
       </div>
 
+      <!-- CARD 5: Participants -->
       <div class="card participants-list" style="margin-top: 12px;">
         <h3>Participants (<span id="participantCount">0</span>/10)</h3>
         <div id="participantsList"></div>
@@ -524,6 +588,19 @@ without prior written permission from Ng Jun Wei.
 </div>
 
 <script>
+  // ========= Collapsible UI =========
+  function toggleCollapse(cardId) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    card.classList.toggle("collapsed");
+    const isCollapsed = card.classList.contains("collapsed");
+
+    const btn = card.querySelector(".collapse-btn");
+    const lbl = document.getElementById(cardId + "_lbl");
+    if (btn) btn.setAttribute("aria-expanded", String(!isCollapsed));
+    if (lbl) lbl.textContent = isCollapsed ? "Expand" : "Collapse";
+  }
+
   // ========= Globals =========
   let detector = null;
   let cocoModel = null;
@@ -614,7 +691,7 @@ without prior written permission from Ng Jun Wei.
   }
   function ensurePiPOnMobileAuto() {
     if (window.matchMedia && window.matchMedia("(max-width: 980px)").matches) {
-      document.body.classList.add("pip-on"); // auto-pin on phones
+      document.body.classList.add("pip-on");
     }
   }
 
@@ -894,7 +971,6 @@ without prior written permission from Ng Jun Wei.
       overlay = document.getElementById("overlay");
       ctx = overlay.getContext("2d");
 
-      // IMPORTANT iOS: must be started by a user gesture (button press). This function is called by button.
       const reqFps = parseInt(document.getElementById("fpsSelection").value, 10);
       const facingMode = document.getElementById("cameraFacing").value;
 
@@ -904,7 +980,6 @@ without prior written permission from Ng Jun Wei.
 
       showStatus("Starting camera…", "info");
 
-      // iOS Safari: request without frameRate first, then applyConstraints (more reliable)
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
@@ -919,7 +994,6 @@ without prior written permission from Ng Jun Wei.
 
       await new Promise(res => (video.onloadedmetadata = () => res()));
 
-      // try to set fps (may be ignored on iOS)
       const track = stream.getVideoTracks()[0];
       if (track && track.applyConstraints) {
         try {
@@ -927,18 +1001,14 @@ without prior written permission from Ng Jun Wei.
         } catch (_) {}
       }
 
-      // ensure play
       await video.play();
 
-      // overlay sizing
       resizeOverlayToVideo();
 
-      // show negotiated info
       const settings = track && track.getSettings ? track.getSettings() : {};
       document.getElementById("negotiatedInfo").textContent =
         `${settings.width || video.videoWidth}×${settings.height || video.videoHeight} • req ${reqFps}fps • got ${settings.frameRate || "?"}fps`;
 
-      // init models
       if (!detector) {
         showStatus("Loading pose model…", "info");
         await initializePoseDetection();
@@ -948,10 +1018,8 @@ without prior written permission from Ng Jun Wei.
       if (mode === "coco" || mode === "auto") await initializeCoco();
       ensureMotionTrackerInit();
 
-      // enable record
       document.getElementById("recordBtn").disabled = false;
 
-      // reset states
       prevFrame = null;
       impulse_Ns = 0; angImpulse_Nms = 0; lastImpulseT = null;
       kin = { vMagF:null, aMagF:null, omegaF:null, alphaF:null, forceF:null, momentF:null };
@@ -959,7 +1027,6 @@ without prior written permission from Ng Jun Wei.
       angState.map.clear();
       resetProjectileState();
 
-      // Phone: auto-pin video so it stays visible while scrolling
       ensurePiPOnMobileAuto();
 
       showStatus("Ready ✅", "success");
@@ -991,7 +1058,6 @@ without prior written permission from Ng Jun Wei.
 
   // ========= Overlay: always on =========
   function drawOverlayAlways(kps, neck) {
-    // skeleton
     ctx.lineWidth = 4;
     ctx.strokeStyle = "rgba(255,0,0,0.95)";
     for (const [i,j] of SKELETON) {
@@ -1003,7 +1069,7 @@ without prior written permission from Ng Jun Wei.
         ctx.stroke();
       }
     }
-    // joints + labels
+
     for (let i=0;i<kps.length;i++){
       const kp = kps[i];
       if (!clampScore(kp)) continue;
@@ -1013,7 +1079,7 @@ without prior written permission from Ng Jun Wei.
       ctx.fill();
       drawText(JOINT_LABELS[i], kp.x + 8, kp.y - 8);
     }
-    // neck
+
     if (neck) {
       ctx.beginPath();
       ctx.arc(neck.x, neck.y, 7, 0, Math.PI*2);
@@ -1099,7 +1165,7 @@ without prior written permission from Ng Jun Wei.
     const a = joints_m[key], b = prevJoints_m[key];
     if (!a || !b || dt <= 0) return null;
     const v = vecMul(vecSub(a,b), 1/dt);
-    return vecLen(v); // m/s only
+    return vecLen(v);
   }
 
   // ========= Projectile tracking =========
@@ -1364,12 +1430,12 @@ without prior written permission from Ng Jun Wei.
         if (prevTheta != null) {
           let dTheta = unwrapDeltaDeg(theta, prevTheta);
           dTheta = clamp(dTheta, -MAX_DTHETA_DEG, MAX_DTHETA_DEG);
-          const omega = dTheta / dtSafe; // deg/s
+          const omega = dTheta / dtSafe;
 
           kin.omegaF = lowPass(kin.omegaF, omega, dtSafe, Math.max(2, fc*0.6));
 
           let alpha = 0;
-          if (prevFrame.omega != null) alpha = (kin.omegaF - prevFrame.omega) / dtSafe; // deg/s^2
+          if (prevFrame.omega != null) alpha = (kin.omegaF - prevFrame.omega) / dtSafe;
           kin.alphaF = lowPass(kin.alphaF, alpha, dtSafe, Math.max(2, fc*0.6));
 
           let L = 0.3;
@@ -1431,7 +1497,6 @@ without prior written permission from Ng Jun Wei.
       if (projMode !== "off") {
         if ((projMode === "coco" || projMode === "auto") && cocoSsd) {
           if (!cocoModel && (projMode === "coco" || projMode === "auto")) {
-            // lazy load if user turned on while running
             initializeCoco().catch(()=>{});
           }
           if (cocoModel) projPos = await detectProjectileCOCO(t);
@@ -1771,9 +1836,14 @@ without prior written permission from Ng Jun Wei.
   window.addEventListener("load", () => {
     renderMetricUI();
     updateParticipantsList();
-    showStatus("Ready. Add participant → set kinetics driver → select metrics → Start Camera.", "info");
+    showStatus("Ready. Add participant → (optional) select metrics → set kinetics driver → Start Camera.", "info");
 
-    // redraw charts on resize
+    // default: collapse on mobile for cleaner UX
+    if (window.matchMedia && window.matchMedia("(max-width: 980px)").matches) {
+      // keep the selector available but not in the way
+      toggleCollapse("displaySelectorCard");
+    }
+
     window.addEventListener("resize", () => {
       const t = performance.now() / 1000;
       throttleChartDraw(t);
