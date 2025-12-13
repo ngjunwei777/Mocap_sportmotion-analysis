@@ -15,47 +15,52 @@ without prior written permission from Ng Jun Wei.
   <meta name="copyright" content="© 2025 Ng Jun Wei. All rights reserved.">
   <title>Sport Performance Analyzer (iOS) + Joint-Driven Kinetics</title>
 
+  <!-- TFJS + Pose -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0"></script>
+
+  <!-- Projectile detector -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
+
+  <!-- XLSX export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body {
+    body{
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
       padding: 14px;
     }
-    .container {
+    .container{
       max-width: 1400px;
       margin: 0 auto;
-      background: #fff;
+      background:#fff;
       border-radius: 18px;
       padding: 16px;
       box-shadow: 0 18px 55px rgba(0,0,0,0.22);
     }
     h1 { text-align:center; color:#667eea; margin-bottom:6px; font-size:2.05em; }
-    .subtitle { text-align:center; color:#666; margin-bottom:14px; font-size:1.02em; }
+    .subtitle{ text-align:center; color:#666; margin-bottom:14px; font-size:1.02em; }
 
-    .layout {
+    .layout{
       display:grid;
       grid-template-columns: 1.08fr 0.92fr;
       gap: 14px;
       align-items:start;
     }
-    @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+    @media (max-width: 980px){ .layout{ grid-template-columns: 1fr; } }
 
-    .card { background:#f8f9fa; border-radius: 14px; padding: 14px; }
-    .form-grid {
+    .card{ background:#f8f9fa; border-radius: 14px; padding: 14px; }
+    .form-grid{
       display:grid;
       grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 10px;
       margin-top: 10px;
     }
-    label { font-weight: 850; margin-bottom: 6px; color:#333; display:block; }
-    input, select {
+    label{ font-weight: 850; margin-bottom: 6px; color:#333; display:block; }
+    input, select{
       width:100%;
       padding: 10px;
       border: 2px solid #ddd;
@@ -63,9 +68,9 @@ without prior written permission from Ng Jun Wei.
       font-size: 14px;
       background:#fff;
     }
-    input:focus, select:focus { outline:none; border-color:#667eea; }
+    input:focus, select:focus{ outline:none; border-color:#667eea; }
 
-    .btn {
+    .btn{
       padding: 11px 14px;
       border: none;
       border-radius: 12px;
@@ -75,11 +80,11 @@ without prior written permission from Ng Jun Wei.
       margin: 8px 8px 0 0;
       transition: transform .15s, opacity .15s;
     }
-    .btn:hover { transform: translateY(-1px); }
-    .btn:disabled { background:#cfcfcf !important; cursor:not-allowed; opacity:.85; transform:none; }
-    .btn-primary { background:#667eea; color:#fff; }
-    .btn-success { background:#10b981; color:#fff; }
-    .btn-danger  { background:#ef4444; color:#fff; }
+    .btn:hover{ transform: translateY(-1px); }
+    .btn:disabled{ background:#cfcfcf !important; cursor:not-allowed; opacity:.85; transform:none; }
+    .btn-primary{ background:#667eea; color:#fff; }
+    .btn-success{ background:#10b981; color:#fff; }
+    .btn-danger { background:#ef4444; color:#fff; }
 
     .status-message{
       display:none;
@@ -89,15 +94,16 @@ without prior written permission from Ng Jun Wei.
       font-weight: 950;
       margin: 10px 0 14px 0;
     }
-    .status-success { background:#d1fae5; color:#065f46; }
-    .status-error { background:#fee2e2; color:#991b1b; }
-    .status-info { background:#dbeafe; color:#1e40af; }
+    .status-success{ background:#d1fae5; color:#065f46; }
+    .status-error{ background:#fee2e2; color:#991b1b; }
+    .status-info{ background:#dbeafe; color:#1e40af; }
 
-    .sticky { position: sticky; top: 8px; }
-    @media (max-width: 980px) { .sticky { top: 0; z-index: 50; } }
+    /* Desktop sticky */
+    .sticky{ position: sticky; top: 8px; }
+    @media (max-width: 980px){ .sticky{ top: 0; z-index: 50; } }
 
-    .video-wrap { position:relative; background:#000; border-radius: 14px; overflow:hidden; }
-    video {
+    .video-wrap{ position:relative; background:#000; border-radius: 14px; overflow:hidden; }
+    video{
       width:100%;
       height:auto;
       display:block;
@@ -106,7 +112,7 @@ without prior written permission from Ng Jun Wei.
       transform: translateZ(0);
       -webkit-transform: translateZ(0);
     }
-    canvas#overlay {
+    canvas#overlay{
       width:100%;
       height:auto;
       display:block;
@@ -115,7 +121,7 @@ without prior written permission from Ng Jun Wei.
       z-index:5;
       pointer-events:none;
     }
-    .hud {
+    .hud{
       position:absolute;
       top: 10px; right: 10px;
       z-index: 10;
@@ -131,10 +137,10 @@ without prior written permission from Ng Jun Wei.
       align-items:flex-end;
       max-width: 95%;
     }
-    .hud small { font-weight: 850; opacity: .92; }
+    .hud small{ font-weight: 850; opacity: .92; }
 
-    .divider { height:1px; background:#e9e9e9; margin: 12px 0; }
-    .mini { color:#666; font-size: .88em; line-height: 1.35; margin-top: 8px; }
+    .divider{ height:1px; background:#e9e9e9; margin: 12px 0; }
+    .mini{ color:#666; font-size: .88em; line-height: 1.35; margin-top: 8px; }
 
     .metrics-grid{
       display:grid;
@@ -152,8 +158,8 @@ without prior written permission from Ng Jun Wei.
     .metric .v{ color:#667eea; font-weight: 1000; font-size: 1.55em; }
     .unit{ color:#999; font-weight: 900; font-size: .75em; margin-left: 6px; }
 
-    .chiplist { margin-top: 10px; display:flex; flex-wrap:wrap; gap: 8px; }
-    .chip {
+    .chiplist{ margin-top: 10px; display:flex; flex-wrap:wrap; gap: 8px; }
+    .chip{
       background:#fff;
       border-radius: 999px;
       padding: 8px 10px;
@@ -165,7 +171,7 @@ without prior written permission from Ng Jun Wei.
       color:#333;
       font-size: 13px;
     }
-    .chip button {
+    .chip button{
       border:none;
       background: rgba(239,68,68,0.12);
       color:#ef4444;
@@ -175,7 +181,7 @@ without prior written permission from Ng Jun Wei.
       cursor:pointer;
     }
 
-    .charts-grid { display:grid; grid-template-columns: 1fr; gap: 12px; margin-top: 10px; }
+    .charts-grid{ display:grid; grid-template-columns: 1fr; gap: 12px; margin-top: 10px; }
     .chart-card{
       background:#fff;
       border-radius: 14px;
@@ -211,12 +217,47 @@ without prior written permission from Ng Jun Wei.
       box-shadow: 0 2px 10px rgba(0,0,0,0.06);
     }
 
-    footer {
+    footer{
       margin-top: 14px;
       text-align:center;
       color:#666;
       font-weight: 850;
       font-size: 0.92em;
+    }
+
+    /* ========= Mobile PiP (Always Visible Video) ========= */
+    .pip-toggle{ display:none; margin-top: 10px; }
+
+    @media (max-width: 980px) {
+      /* sticky is unreliable on iOS inside grids; use PiP */
+      .sticky{ position: static; }
+      .pip-toggle{ display:inline-block; }
+
+      body.pip-on .sticky .card{
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        z-index: 9999;
+        padding: 10px;
+        box-shadow: 0 18px 55px rgba(0,0,0,0.35);
+        max-width: 520px;
+        margin: 0 auto;
+      }
+
+      body.pip-on .container{
+        padding-bottom: 260px; /* space so PiP doesn't hide content */
+      }
+    }
+
+    @supports (padding: max(0px)) {
+      @media (max-width: 980px) {
+        body.pip-on .sticky .card{
+          bottom: max(12px, env(safe-area-inset-bottom));
+          left: max(12px, env(safe-area-inset-left));
+          right: max(12px, env(safe-area-inset-right));
+        }
+      }
     }
   </style>
 </head>
@@ -233,6 +274,7 @@ without prior written permission from Ng Jun Wei.
     <div>
       <div class="card">
         <h3>Participant</h3>
+
         <div class="form-grid">
           <div>
             <label for="participantName">Name *</label>
@@ -260,6 +302,7 @@ without prior written permission from Ng Jun Wei.
             <input id="participantHeight" type="number" min="50" max="250" step="0.1" placeholder="cm">
           </div>
         </div>
+
         <button class="btn btn-success" onclick="addParticipant()">Add Participant</button>
 
         <div class="divider"></div>
@@ -343,6 +386,7 @@ without prior written permission from Ng Jun Wei.
             </select>
           </div>
         </div>
+
         <div class="mini">
           Force–Time uses the selected joint’s <b>linear acceleration</b> with an effective segment mass fraction.
           Moment–Time uses <b>segment inertia × angular acceleration</b>. (2D proxy, filtered.)
@@ -383,6 +427,9 @@ without prior written permission from Ng Jun Wei.
         <button class="btn btn-primary" onclick="stopCamera()">Stop Camera</button>
         <button class="btn btn-success" id="recordBtn" onclick="startRecording()" disabled>Start Recording</button>
         <button class="btn btn-danger" id="stopBtn" onclick="stopRecording()" disabled>Stop Recording</button>
+
+        <!-- Mobile PiP toggle -->
+        <button class="btn btn-primary pip-toggle" onclick="togglePiP()">📌 Pin Video (PiP)</button>
       </div>
 
       <div class="card" style="margin-top: 12px;">
@@ -456,9 +503,9 @@ without prior written permission from Ng Jun Wei.
     </div>
 
     <!-- RIGHT -->
-    <div class="sticky">
+    <div class="sticky" id="stickyVideo">
       <div class="card">
-        <h3>Sticky Video (Always Visible)</h3>
+        <h3>Video (Sticky/PiP)</h3>
         <div class="video-wrap">
           <video id="video" playsinline muted></video>
           <canvas id="overlay"></canvas>
@@ -477,9 +524,7 @@ without prior written permission from Ng Jun Wei.
 </div>
 
 <script>
-  // ======================
-  // Globals
-  // ======================
+  // ========= Globals =========
   let detector = null;
   let cocoModel = null;
 
@@ -498,7 +543,7 @@ without prior written permission from Ng Jun Wei.
   let frameCount = 0;
   let lastFPSUpdate = Date.now();
 
-  let prevFrame = null; // stores pose/kinetic state
+  let prevFrame = null;
 
   // Impulse accumulators
   let impulse_Ns = 0;
@@ -506,41 +551,26 @@ without prior written permission from Ng Jun Wei.
   let lastImpulseT = null;
 
   // Selected metrics
-  let selectedMetrics = []; // {id,type,joint,side}
+  let selectedMetrics = [];
 
-  // --- Angular velocity smoothing state (stable ω)
+  // Angular velocity smoothing state
   const angState = { map: new Map() };
-  const MAX_OMEGA_DEG_S = 900;   // clamp spikes
-  const MAX_DTHETA_DEG = 45;     // clamp per-frame delta before dt division
+  const MAX_OMEGA_DEG_S = 900;
+  const MAX_DTHETA_DEG = 45;
 
-  // Kinetics-from-joint state
+  // Kinetics state
   let kin = {
-    vMagF: null,
-    aMagF: null,
-    omegaF: null,
-    alphaF: null,
-    forceF: null,
-    momentF: null
+    vMagF: null, aMagF: null, omegaF: null, alphaF: null, forceF: null, momentF: null
   };
 
   // Projectile tracking state
   const proj = {
-    px: null,
-    m_prev: null,
-    t_prev: null,
-    speed: 0,
-    trail: [],
-    lastDetectT: 0,
-    motionCanvas: null,
-    motionCtx: null,
-    prevGray: null
+    px: null, m_prev: null, t_prev: null, speed: 0, trail: [],
+    lastDetectT: 0, motionCanvas: null, motionCtx: null, prevGray: null
   };
 
-  // MoveNet keypoint indices
+  // MoveNet indices
   const KP = {
-    nose: 0,
-    left_eye: 1, right_eye: 2,
-    left_ear: 3, right_ear: 4,
     shoulder_L: 5, shoulder_R: 6,
     elbow_L: 7, elbow_R: 8,
     wrist_L: 9, wrist_R: 10,
@@ -570,20 +600,25 @@ without prior written permission from Ng Jun Wei.
     [KP.knee_R, KP.ankle_R],
   ];
 
-  // Segment mass fractions (rough anthropometric defaults)
+  // Segment mass fractions
   const SEG_MASS_FRAC = {
-    upperArm: 0.028,   // each
-    forearm:  0.016,   // each
-    hand:     0.006,   // each
-    thigh:    0.105,   // each
-    shank:    0.0465,  // each
-    foot:     0.0145,  // each
-    trunk:    0.50
+    upperArm: 0.028, forearm: 0.016, hand: 0.006,
+    thigh: 0.105, shank: 0.0465, foot: 0.0145, trunk: 0.50
   };
 
-  // ======================
-  // Helpers
-  // ======================
+  // ========= Mobile PiP Toggle =========
+  function togglePiP() {
+    document.body.classList.toggle("pip-on");
+    const on = document.body.classList.contains("pip-on");
+    showStatus(on ? "PiP enabled: video pinned ✅" : "PiP disabled", "info");
+  }
+  function ensurePiPOnMobileAuto() {
+    if (window.matchMedia && window.matchMedia("(max-width: 980px)").matches) {
+      document.body.classList.add("pip-on"); // auto-pin on phones
+    }
+  }
+
+  // ========= Helpers =========
   function showStatus(message, type) {
     const el = document.getElementById('statusMessage');
     el.className = `status-message status-${type}`;
@@ -593,9 +628,10 @@ without prior written permission from Ng Jun Wei.
   }
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-  function clampScore(kp, thr=0.3) { return kp && typeof kp.score === "number" && kp.score >= thr; }
-  function midpoint(a,b) { return { x:(a.x+b.x)/2, y:(a.y+b.y)/2, score: Math.min(a.score??0, b.score??0) }; }
   function deg(rad){ return rad * 180 / Math.PI; }
+  function clampScore(kp, thr=0.3) { return kp && typeof kp.score === "number" && kp.score >= thr; }
+
+  function midpoint(a,b) { return { x:(a.x+b.x)/2, y:(a.y+b.y)/2, score: Math.min(a.score??0, b.score??0) }; }
 
   function calcAngle(p1,p2,p3) {
     const r = Math.atan2(p3.y-p2.y, p3.x-p2.x) - Math.atan2(p1.y-p2.y, p1.x-p2.x);
@@ -605,7 +641,6 @@ without prior written permission from Ng Jun Wei.
   }
 
   function segmentAngleDeg(a, b) { return deg(Math.atan2(b.y - a.y, b.x - a.x)); }
-
   function unwrapDeltaDeg(curr, prev) {
     let d = curr - prev;
     d = ((d + 180) % 360) - 180;
@@ -654,6 +689,13 @@ without prior written permission from Ng Jun Wei.
   function getWindowSec() { return parseInt(document.getElementById("windowSeconds").value, 10); }
   function safeDt(dt){ return (dt && dt > 1e-4 && dt < 0.2) ? dt : null; }
 
+  function lowPass(prevY, x, dt, fc) {
+    if (prevY == null) return x;
+    const RC = 1 / (2 * Math.PI * fc);
+    const alpha = dt / (RC + dt);
+    return prevY + alpha * (x - prevY);
+  }
+
   function jointKey(joint, side){
     return (joint === "neck") ? "neck" : `${joint}_${side}`;
   }
@@ -669,7 +711,6 @@ without prior written permission from Ng Jun Wei.
     return null;
   }
 
-  // Confidence gate for segment-based angular velocity
   function segConfidenceOK(jointsPx, side, segKey) {
     const s = side;
     const j = jointsPx;
@@ -683,9 +724,7 @@ without prior written permission from Ng Jun Wei.
     return false;
   }
 
-  // ======================
-  // Metric selection UI
-  // ======================
+  // ========= Metric selection UI =========
   function metricLabel(m) {
     const type = m.type === "angle" ? "Angle" : (m.type === "angVel" ? "AngVel" : "LinVel");
     const unit = m.type === "angle" ? "°" : (m.type === "angVel" ? "°/s" : "m/s");
@@ -738,25 +777,8 @@ without prior written permission from Ng Jun Wei.
     }
   }
 
-  // ======================
-  // Low-pass filter (1st order IIR)
-  // ======================
-  function lowPass(prevY, x, dt, fc) {
-    if (prevY == null) return x;
-    const RC = 1 / (2 * Math.PI * fc);
-    const alpha = dt / (RC + dt);
-    return prevY + alpha * (x - prevY);
-  }
-
-  // ======================
-  // Charts
-  // ======================
-  const chartSeries = {
-    forceRaw: [],
-    forceFilt: [],
-    momentRaw: [],
-    momentFilt: []
-  };
+  // ========= Charts =========
+  const chartSeries = { forceRaw: [], forceFilt: [], momentRaw: [], momentFilt: [] };
 
   function pushSeries(name, t, v) {
     const win = getWindowSec();
@@ -810,7 +832,6 @@ without prior written permission from Ng Jun Wei.
     function mapX(t){ return ((t - t0) / dt) * w; }
     function mapY(v){ return h - ((v - minV) / (maxV - minV)) * h; }
 
-    // raw faint
     g.strokeStyle = "rgba(120,120,120,0.35)";
     g.lineWidth = 2;
     g.beginPath();
@@ -821,7 +842,6 @@ without prior written permission from Ng Jun Wei.
     }
     g.stroke();
 
-    // filtered bold color
     g.strokeStyle = (canvasId === "chartForce")
       ? "rgba(16,185,129,0.95)"
       : "rgba(239,68,68,0.95)";
@@ -843,15 +863,13 @@ without prior written permission from Ng Jun Wei.
 
   let lastChartDrawT = 0;
   function throttleChartDraw(t) {
-    if (t - lastChartDrawT < 1/15) return; // 15 fps draw
+    if (t - lastChartDrawT < 1/15) return;
     lastChartDrawT = t;
     drawDualLineChart("chartForce", "forceRaw", "forceFilt", "N");
     drawDualLineChart("chartMoment", "momentRaw", "momentFilt", "N·m");
   }
 
-  // ======================
-  // Model init (iOS)
-  // ======================
+  // ========= Model init (iOS-safe) =========
   async function initializePoseDetection() {
     try { await tf.setBackend('webgl'); await tf.ready(); }
     catch (e) { try { await tf.setBackend('wasm'); await tf.ready(); } catch (_) {} }
@@ -869,15 +887,14 @@ without prior written permission from Ng Jun Wei.
     showStatus("Projectile detector loaded ✅", "success");
   }
 
-  // ======================
-  // Camera
-  // ======================
+  // ========= Camera (iOS troubleshooting included) =========
   async function startCamera() {
     try {
       video = document.getElementById("video");
       overlay = document.getElementById("overlay");
       ctx = overlay.getContext("2d");
 
+      // IMPORTANT iOS: must be started by a user gesture (button press). This function is called by button.
       const reqFps = parseInt(document.getElementById("fpsSelection").value, 10);
       const facingMode = document.getElementById("cameraFacing").value;
 
@@ -887,6 +904,7 @@ without prior written permission from Ng Jun Wei.
 
       showStatus("Starting camera…", "info");
 
+      // iOS Safari: request without frameRate first, then applyConstraints (more reliable)
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
@@ -899,20 +917,28 @@ without prior written permission from Ng Jun Wei.
       streamRef = stream;
       video.srcObject = stream;
 
-      await new Promise(res => video.onloadedmetadata = () => res());
+      await new Promise(res => (video.onloadedmetadata = () => res()));
 
+      // try to set fps (may be ignored on iOS)
       const track = stream.getVideoTracks()[0];
       if (track && track.applyConstraints) {
-        try { await track.applyConstraints({ frameRate: { ideal: reqFps, max: reqFps } }); } catch (_) {}
+        try {
+          await track.applyConstraints({ frameRate: { ideal: reqFps, max: reqFps } });
+        } catch (_) {}
       }
 
+      // ensure play
       await video.play();
+
+      // overlay sizing
       resizeOverlayToVideo();
 
+      // show negotiated info
       const settings = track && track.getSettings ? track.getSettings() : {};
       document.getElementById("negotiatedInfo").textContent =
         `${settings.width || video.videoWidth}×${settings.height || video.videoHeight} • req ${reqFps}fps • got ${settings.frameRate || "?"}fps`;
 
+      // init models
       if (!detector) {
         showStatus("Loading pose model…", "info");
         await initializePoseDetection();
@@ -922,17 +948,19 @@ without prior written permission from Ng Jun Wei.
       if (mode === "coco" || mode === "auto") await initializeCoco();
       ensureMotionTrackerInit();
 
+      // enable record
       document.getElementById("recordBtn").disabled = false;
 
       // reset states
       prevFrame = null;
       impulse_Ns = 0; angImpulse_Nms = 0; lastImpulseT = null;
-
       kin = { vMagF:null, aMagF:null, omegaF:null, alphaF:null, forceF:null, momentF:null };
-
       for (const k of Object.keys(chartSeries)) chartSeries[k] = [];
       angState.map.clear();
       resetProjectileState();
+
+      // Phone: auto-pin video so it stays visible while scrolling
+      ensurePiPOnMobileAuto();
 
       showStatus("Ready ✅", "success");
 
@@ -961,10 +989,9 @@ without prior written permission from Ng Jun Wei.
     showStatus("Camera stopped.", "info");
   }
 
-  // ======================
-  // Overlay drawing (always on)
-  // ======================
+  // ========= Overlay: always on =========
   function drawOverlayAlways(kps, neck) {
+    // skeleton
     ctx.lineWidth = 4;
     ctx.strokeStyle = "rgba(255,0,0,0.95)";
     for (const [i,j] of SKELETON) {
@@ -976,7 +1003,7 @@ without prior written permission from Ng Jun Wei.
         ctx.stroke();
       }
     }
-
+    // joints + labels
     for (let i=0;i<kps.length;i++){
       const kp = kps[i];
       if (!clampScore(kp)) continue;
@@ -986,6 +1013,7 @@ without prior written permission from Ng Jun Wei.
       ctx.fill();
       drawText(JOINT_LABELS[i], kp.x + 8, kp.y - 8);
     }
+    // neck
     if (neck) {
       ctx.beginPath();
       ctx.arc(neck.x, neck.y, 7, 0, Math.PI*2);
@@ -995,9 +1023,7 @@ without prior written permission from Ng Jun Wei.
     }
   }
 
-  // ======================
-  // Pose mapping
-  // ======================
+  // ========= Pose mapping =========
   function buildJointsPx(kps, neck) {
     const pick = (idx) => {
       const kp = kps[idx];
@@ -1076,17 +1102,10 @@ without prior written permission from Ng Jun Wei.
     return vecLen(v); // m/s only
   }
 
-  // ======================
-  // Projectile tracking
-  // ======================
+  // ========= Projectile tracking =========
   function resetProjectileState() {
-    proj.px = null;
-    proj.m_prev = null;
-    proj.t_prev = null;
-    proj.speed = 0;
-    proj.trail = [];
-    proj.lastDetectT = 0;
-    proj.prevGray = null;
+    proj.px = null; proj.m_prev = null; proj.t_prev = null;
+    proj.speed = 0; proj.trail = []; proj.lastDetectT = 0; proj.prevGray = null;
     document.getElementById("projInfo").textContent = "Projectile: —";
   }
 
@@ -1098,7 +1117,7 @@ without prior written permission from Ng Jun Wei.
 
   async function detectProjectileCOCO(t) {
     if (!cocoModel) return null;
-    if (t - proj.lastDetectT < 0.2) return null; // 5Hz
+    if (t - proj.lastDetectT < 0.2) return null;
     proj.lastDetectT = t;
 
     const preds = await cocoModel.detect(video);
@@ -1110,8 +1129,7 @@ without prior written permission from Ng Jun Wei.
     if (hint !== "any") cand = preds.filter(p => p.class === hint);
     if (!cand.length) cand = preds;
 
-    let best = null;
-    let bestScore = -Infinity;
+    let best = null, bestScore = -Infinity;
     for (const p of cand) {
       const [x,y,w,h] = p.bbox;
       const score = (p.score ?? 0) * Math.sqrt(Math.max(1, w*h));
@@ -1147,27 +1165,18 @@ without prior written permission from Ng Jun Wei.
       gray[j] = (0.299*r + 0.587*g + 0.114*b) | 0;
     }
 
-    if (!proj.prevGray) {
-      proj.prevGray = gray;
-      return null;
-    }
+    if (!proj.prevGray) { proj.prevGray = gray; return null; }
 
     const thr = 22;
     let sumX=0, sumY=0, count=0;
-
     for (let y=0; y<dh; y++){
       const row = y*dw;
       for (let x=0; x<dw; x++){
         const idx = row + x;
         const d = Math.abs(gray[idx] - proj.prevGray[idx]);
-        if (d > thr) {
-          sumX += x;
-          sumY += y;
-          count++;
-        }
+        if (d > thr) { sumX += x; sumY += y; count++; }
       }
     }
-
     proj.prevGray = gray;
     if (count < 120) return null;
 
@@ -1218,14 +1227,12 @@ without prior written permission from Ng Jun Wei.
     ctx.arc(proj.px.x, proj.px.y, 8, 0, Math.PI*2);
     ctx.fillStyle = "rgba(255, 165, 0, 0.95)";
     ctx.fill();
-    drawText(`Projectile v ${proj.speed.toFixed(2)} m/s`, proj.px.x + 12, proj.px.y - 10);
 
+    drawText(`Projectile v ${proj.speed.toFixed(2)} m/s`, proj.px.x + 12, proj.px.y - 10);
     document.getElementById("projInfo").textContent = `Projectile: ${proj.speed.toFixed(2)} m/s`;
   }
 
-  // ======================
-  // Selected metrics (stable ω)
-  // ======================
+  // ========= Selected metrics computation =========
   function computeSelectedMetricValues({dt, jointsPx, joints_m, angR, angL, segR, segL, prevFrame}) {
     const out = {};
     for (const m of selectedMetrics) {
@@ -1260,8 +1267,8 @@ without prior written permission from Ng Jun Wei.
               dTheta = clamp(dTheta, -MAX_DTHETA_DEG, MAX_DTHETA_DEG);
 
               const st = angState.map.get(m.id) || { prevThetaF: null, omegaF: null };
-
               const fcTheta = getCutoffHz();
+
               const thetaPred = (st.prevThetaF == null) ? currTheta : (st.prevThetaF + dTheta);
               const thetaF = lowPass(st.prevThetaF, thetaPred, dt, fcTheta);
 
@@ -1302,8 +1309,7 @@ without prior written permission from Ng Jun Wei.
       const unit = (m.type === "angle") ? "°" : (m.type === "angVel") ? "°/s" : "m/s";
       const symbol = (m.type === "angle") ? "A" : (m.type === "angVel") ? "ω" : "v";
 
-      let anchor = null;
-      anchor = (m.joint === "neck") ? jointsPx.neck : jointsPx[`${m.joint}_${m.side}`];
+      const anchor = (m.joint === "neck") ? jointsPx.neck : jointsPx[`${m.joint}_${m.side}`];
       if (!anchor) continue;
 
       drawText(`${m.joint.toUpperCase()}_${m.side} ${symbol} ${v.toFixed(2)} ${unit}`, anchor.x + 10, anchor.y + 18);
@@ -1311,10 +1317,8 @@ without prior written permission from Ng Jun Wei.
     }
   }
 
-  // ======================
-  // Joint-driven kinetics
-  // ======================
-  function computeKineticsFromSelectedJoint({t, dt, jointsPx, joints_m, segR, segL, mass}) {
+  // ========= Joint-driven kinetics =========
+  function computeKineticsFromSelectedJoint({t, dt, joints_m, segR, segL, mass}) {
     const dtSafe = safeDt(dt);
     if (!prevFrame || !dtSafe) return { forceMag: 0, moment: 0, driverLabel: "—" };
 
@@ -1326,11 +1330,9 @@ without prior written permission from Ng Jun Wei.
     const prevJ_m = prevFrame.joints_m ? prevFrame.joints_m[key] : null;
     if (!j_m || !prevJ_m) return { forceMag: 0, moment: 0, driverLabel: `${joint.toUpperCase()}_${side} (no data)` };
 
-    // v (vector) and |v|
     const v = vecMul(vecSub(j_m, prevJ_m), 1/dtSafe);
     const vMag = vecLen(v);
 
-    // a (vector) and |a| using previous velocity
     let aMag = 0;
     const prevV = prevFrame.v_joint ? prevFrame.v_joint[key] : null;
     if (prevV) {
@@ -1349,7 +1351,6 @@ without prior written permission from Ng Jun Wei.
     kin.forceF = lowPass(kin.forceF, Fraw, dtSafe, fc);
     const forceMag = kin.forceF ?? 0;
 
-    // Moment proxy = I * alpha (alpha from segment angle second derivative)
     let moment = 0;
     if (seg) {
       const segAngles = (side === "R") ? segR : segL;
@@ -1364,14 +1365,14 @@ without prior written permission from Ng Jun Wei.
           let dTheta = unwrapDeltaDeg(theta, prevTheta);
           dTheta = clamp(dTheta, -MAX_DTHETA_DEG, MAX_DTHETA_DEG);
           const omega = dTheta / dtSafe; // deg/s
+
           kin.omegaF = lowPass(kin.omegaF, omega, dtSafe, Math.max(2, fc*0.6));
 
           let alpha = 0;
           if (prevFrame.omega != null) alpha = (kin.omegaF - prevFrame.omega) / dtSafe; // deg/s^2
           kin.alphaF = lowPass(kin.alphaF, alpha, dtSafe, Math.max(2, fc*0.6));
 
-          // segment length L (m)
-          let L = 0.3; // fallback
+          let L = 0.3;
           if (seg === "upperArm") {
             const a = joints_m[`shoulder_${side}`], b = joints_m[`elbow_${side}`];
             if (a && b) L = vecLen(vecSub(b,a));
@@ -1395,9 +1396,9 @@ without prior written permission from Ng Jun Wei.
           const mSeg = SEG_MASS_FRAC[seg] * mass;
           const I = (1/12) * mSeg * L * L;
 
-          // convert alpha to rad/s^2
           const alpha_rad = (kin.alphaF ?? 0) * (Math.PI/180);
-          const tauRaw = I * alpha_rad; // N·m
+          const tauRaw = I * alpha_rad;
+
           kin.momentF = lowPass(kin.momentF, tauRaw, dtSafe, fc);
           moment = kin.momentF ?? 0;
         }
@@ -1407,9 +1408,7 @@ without prior written permission from Ng Jun Wei.
     return { forceMag, moment, driverLabel: `${joint.toUpperCase()}_${side}` };
   }
 
-  // ======================
-  // Main loop
-  // ======================
+  // ========= Main loop =========
   async function loop() {
     try {
       if (!video || video.readyState < 2 || !detector) {
@@ -1430,7 +1429,13 @@ without prior written permission from Ng Jun Wei.
       let projPos = null;
 
       if (projMode !== "off") {
-        if (projMode === "coco" || projMode === "auto") projPos = await detectProjectileCOCO(t);
+        if ((projMode === "coco" || projMode === "auto") && cocoSsd) {
+          if (!cocoModel && (projMode === "coco" || projMode === "auto")) {
+            // lazy load if user turned on while running
+            initializeCoco().catch(()=>{});
+          }
+          if (cocoModel) projPos = await detectProjectileCOCO(t);
+        }
         if (!projPos && (projMode === "motion" || projMode === "auto")) projPos = trackProjectileMotion();
         if (projPos) updateProjectileKinematics(t, projPos, scale);
       }
@@ -1445,7 +1450,6 @@ without prior written permission from Ng Jun Wei.
 
         const jointsPx = buildJointsPx(kps, neck);
 
-        // convert joints to meters
         const joints_m = {};
         for (const k of Object.keys(jointsPx)) {
           const p = jointsPx[k];
@@ -1459,7 +1463,6 @@ without prior written permission from Ng Jun Wei.
 
         const dt = prevFrame ? (t - prevFrame.t) : 0;
 
-        // Build v_joint map for THIS frame (based on prevFrame)
         const v_joint = {};
         const dtSafeNow = safeDt(dt);
         if (prevFrame && prevFrame.joints_m && dtSafeNow) {
@@ -1470,11 +1473,7 @@ without prior written permission from Ng Jun Wei.
           }
         }
 
-        // Kinetics from selected joint kinematics
-        const kinOut = computeKineticsFromSelectedJoint({
-          t, dt, jointsPx, joints_m, segR, segL, mass
-        });
-
+        const kinOut = computeKineticsFromSelectedJoint({ t, dt, joints_m, segR, segL, mass });
         const forceMag = kinOut.forceMag;
         const moment = kinOut.moment;
 
@@ -1482,15 +1481,12 @@ without prior written permission from Ng Jun Wei.
         document.getElementById("lblMoment").textContent = `${moment.toFixed(2)} N·m`;
         document.getElementById("kinInfo").textContent = `Kinetics: ${kinOut.driverLabel}`;
 
-        // push to chart series (raw=filt here because kinetics already filtered in kin.*)
-        // still keep raw channels so the chart renders consistently
         pushSeries("forceRaw", t, forceMag);
         pushSeries("forceFilt", t, forceMag);
         pushSeries("momentRaw", t, moment);
         pushSeries("momentFilt", t, moment);
         throttleChartDraw(t);
 
-        // impulses during recording
         if (isRecording) {
           if (lastImpulseT != null) {
             const dtI = t - lastImpulseT;
@@ -1502,10 +1498,7 @@ without prior written permission from Ng Jun Wei.
           lastImpulseT = t;
         }
 
-        // Selected metrics
-        const values = computeSelectedMetricValues({
-          dt, jointsPx, joints_m, angR, angL, segR, segL, prevFrame
-        });
+        const values = computeSelectedMetricValues({ dt, jointsPx, joints_m, angR, angL, segR, segL, prevFrame });
 
         for (const m of selectedMetrics) {
           const elId = "val_" + m.id.replaceAll(":","_");
@@ -1518,10 +1511,8 @@ without prior written permission from Ng Jun Wei.
 
         drawSelectedLabels(values, jointsPx);
 
-        // Projectile overlay (draw on top)
         if (projMode !== "off") drawProjectileOverlay();
 
-        // Recording frame
         if (isRecording && currentParticipant) {
           recordingFrames.push({
             t_ms: Date.now(),
@@ -1529,28 +1520,18 @@ without prior written permission from Ng Jun Wei.
             fpsDetected: detectedFPS,
             plane: document.getElementById("planeSelection").value,
             cutoffHz: getCutoffHz(),
-
-            // kinetics
             force_N: forceMag,
             moment_Nm: moment,
-
             impulse_Ns,
             angImpulse_Nms,
-
-            // projectile
             projectile_px: proj.px ? {x: proj.px.x, y: proj.px.y} : null,
             projectile_speed_mps: projMode !== "off" ? proj.speed : 0,
-
-            // selected metrics
             selected: values,
             joints: jointsPx,
-
-            // driver info
             kineticsDriver: { joint: document.getElementById("kinJoint").value, side: document.getElementById("kinSide").value }
           });
         }
 
-        // update prevFrame
         const kinJoint = document.getElementById("kinJoint").value;
         const kinSide = document.getElementById("kinSide").value;
         const seg = getSegmentForJoint(kinJoint);
@@ -1562,8 +1543,6 @@ without prior written permission from Ng Jun Wei.
           v_joint,
           segAnglesR: segR,
           segAnglesL: segL,
-
-          // for moment computation (driver segment only)
           segAngles: segAnglesForDriver,
           omega: kin.omegaF
         };
@@ -1582,9 +1561,7 @@ without prior written permission from Ng Jun Wei.
     }
   }
 
-  // ======================
-  // Recording
-  // ======================
+  // ========= Recording =========
   function startRecording() {
     const selectedId = document.getElementById("selectedParticipant").value;
     if (!selectedId) { showStatus("Select a participant first!", "error"); return; }
@@ -1596,7 +1573,6 @@ without prior written permission from Ng Jun Wei.
 
     impulse_Ns = 0; angImpulse_Nms = 0; lastImpulseT = null;
 
-    // reset smoothing on new recording
     angState.map.clear();
     kin = { vMagF:null, aMagF:null, omegaF:null, alphaF:null, forceF:null, momentF:null };
 
@@ -1634,9 +1610,7 @@ without prior written permission from Ng Jun Wei.
     document.getElementById("stopBtn").disabled = true;
   }
 
-  // ======================
-  // Participants
-  // ======================
+  // ========= Participants =========
   function addParticipant() {
     if (participants.length >= 10) { showStatus("Max 10 participants.", "error"); return; }
     const name = document.getElementById('participantName').value.trim();
@@ -1696,9 +1670,7 @@ without prior written permission from Ng Jun Wei.
     showStatus("Participant removed.", "info");
   }
 
-  // ======================
-  // XLSX Export
-  // ======================
+  // ========= XLSX Export =========
   function avg(arr) { return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
   function max(arr) { return arr.length ? Math.max(...arr) : 0; }
 
@@ -1795,13 +1767,17 @@ without prior written permission from Ng Jun Wei.
     showStatus("Exported XLSX ✅", "success");
   }
 
-  // ======================
-  // Boot
-  // ======================
+  // ========= Boot =========
   window.addEventListener("load", () => {
     renderMetricUI();
     updateParticipantsList();
     showStatus("Ready. Add participant → set kinetics driver → select metrics → Start Camera.", "info");
+
+    // redraw charts on resize
+    window.addEventListener("resize", () => {
+      const t = performance.now() / 1000;
+      throttleChartDraw(t);
+    });
   });
 </script>
 </body>
