@@ -1,758 +1,1265 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sport Performance Pose Estimation</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-        
-        h1 {
-            text-align: center;
-            color: #667eea;
-            margin-bottom: 10px;
-            font-size: 2.5em;
-        }
-        
-        .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 1.1em;
-        }
-        
-        .participant-form {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-        
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-        
-        .form-group {
-            display: flex;
-            flex-direction: column;
-        }
-        
-        label {
-            font-weight: 600;
-            margin-bottom: 5px;
-            color: #333;
-        }
-        
-        input, select {
-            padding: 10px;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-        
-        input:focus, select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin: 5px;
-        }
-        
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #5568d3;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-        
-        .btn-success {
-            background: #10b981;
-            color: white;
-        }
-        
-        .btn-success:hover {
-            background: #059669;
-        }
-        
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-        
-        .btn-danger:hover {
-            background: #dc2626;
-        }
-        
-        .btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .video-section {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin: 20px 0;
-        }
-        
-        .video-container {
-            position: relative;
-            background: #000;
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        
-        video, canvas {
-            width: 100%;
-            height: auto;
-            display: block;
-        }
-        
-        canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-        
-        .metrics-panel {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-        }
-        
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-        }
-        
-        .metric-card {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        
-        .metric-title {
-            font-size: 0.9em;
-            color: #666;
-            margin-bottom: 5px;
-        }
-        
-        .metric-value {
-            font-size: 1.8em;
-            font-weight: 700;
-            color: #667eea;
-        }
-        
-        .metric-unit {
-            font-size: 0.8em;
-            color: #999;
-        }
-        
-        .participants-list {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-        }
-        
-        .participant-item {
-            background: white;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        
-        .participant-info {
-            flex: 1;
-        }
-        
-        .fps-indicator {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.7);
-            color: white;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 14px;
-            font-weight: 600;
-        }
-        
-        .controls {
-            display: flex;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin: 20px 0;
-        }
-        
-        .status-message {
-            text-align: center;
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 5px;
-            font-weight: 600;
-        }
-        
-        .status-success {
-            background: #d1fae5;
-            color: #065f46;
-        }
-        
-        .status-error {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-        
-        .status-info {
-            background: #dbeafe;
-            color: #1e40af;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Sport Performance Pose Estimation</title>
 
-        @media (max-width: 768px) {
-            .video-section {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 20px;
+      padding: 30px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 { text-align:center; color:#667eea; margin-bottom:10px; font-size:2.4em; }
+    .subtitle { text-align:center; color:#666; margin-bottom: 20px; font-size:1.05em; }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin: 18px 0;
+    }
+    @media (max-width: 900px) { .row { grid-template-columns: 1fr; } }
+
+    .card {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 18px;
+    }
+
+    .form-grid {
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+    }
+    label { font-weight: 700; margin-bottom: 6px; color:#333; display:block; }
+    input, select {
+      width: 100%;
+      padding: 10px;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    input:focus, select:focus { outline:none; border-color:#667eea; }
+
+    .btn {
+      padding: 12px 18px;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s;
+      margin: 6px 6px 0 0;
+    }
+    .btn-primary { background:#667eea; color:white; }
+    .btn-success { background:#10b981; color:white; }
+    .btn-danger  { background:#ef4444; color:white; }
+    .btn:disabled { background:#cfcfcf; cursor:not-allowed; transform:none; box-shadow:none; }
+
+    .video-wrap {
+      position: relative;
+      background:#000;
+      border-radius: 14px;
+      overflow:hidden;
+      min-height: 240px;
+    }
+    video, canvas { width: 100%; height:auto; display:block; }
+    canvas { position:absolute; left:0; top:0; }
+
+    .hud {
+      position:absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.7);
+      color:white;
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      display:flex;
+      gap: 10px;
+      align-items:center;
+    }
+    .hud small { font-weight:600; opacity:.9; }
+
+    .status-message {
+      text-align:center;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-weight: 800;
+      margin: 10px 0;
+      display:none;
+    }
+    .status-success { background:#d1fae5; color:#065f46; }
+    .status-error { background:#fee2e2; color:#991b1b; }
+    .status-info { background:#dbeafe; color:#1e40af; }
+
+    .metrics-grid {
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .metric-card {
+      background:white;
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+    .metric-title { color:#666; font-size:.92em; margin-bottom: 6px; }
+    .metric-value { color:#667eea; font-size: 1.6em; font-weight: 900; }
+    .metric-unit  { font-size:.72em; color:#999; margin-left: 6px; font-weight: 700; }
+
+    .toggle-grid {
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 8px 14px;
+      margin-top: 10px;
+    }
+    .toggle {
+      display:flex;
+      align-items:center;
+      gap: 10px;
+      background: white;
+      border-radius: 10px;
+      padding: 10px 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+      user-select:none;
+    }
+    .toggle input { width:auto; transform: scale(1.2); }
+
+    .participants-list { margin-top: 18px; }
+    .participant-item {
+      background: white;
+      padding: 14px;
+      border-radius: 12px;
+      margin-top: 10px;
+      display:flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items:center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+    .participant-info { flex:1; }
+    .hint {
+      margin-top: 10px;
+      font-size: 0.92em;
+      color:#555;
+      line-height: 1.35;
+    }
+    .hint b { color:#333; }
+    .mini {
+      font-size: 0.86em;
+      color:#666;
+      margin-top: 8px;
+    }
+    .divider { height: 1px; background:#e9e9e9; margin: 14px 0; }
+
+  </style>
 </head>
+
 <body>
-    <div class="container">
-        <h1>🏃‍♂️ Sport Performance Analyzer</h1>
-        <p class="subtitle">High-Speed Motion Capture & Biomechanics Analysis</p>
-        
-        <div class="participant-form">
-            <h3>Participant Information</h3>
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="participantName">Name *</label>
-                    <input type="text" id="participantName" placeholder="Enter name" required>
-                </div>
-                <div class="form-group">
-                    <label for="participantSex">Sex *</label>
-                    <select id="participantSex" required>
-                        <option value="">Select</option>
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                        <option value="other">Other</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="participantAge">Age (years) *</label>
-                    <input type="number" id="participantAge" min="5" max="120" placeholder="Age" required>
-                </div>
-                <div class="form-group">
-                    <label for="participantMass">Mass (kg) *</label>
-                    <input type="number" id="participantMass" min="20" max="300" step="0.1" placeholder="Weight" required>
-                </div>
-                <div class="form-group">
-                    <label for="participantHeight">Height (cm) *</label>
-                    <input type="number" id="participantHeight" min="50" max="250" step="0.1" placeholder="Height" required>
-                </div>
-            </div>
-            <button class="btn btn-success" onclick="addParticipant()">Add Participant</button>
+  <div class="container">
+    <h1>🏃‍♂️ Sport Performance Analyzer</h1>
+    <p class="subtitle">High-Speed Motion Capture & Pose-Based Biomechanics (iOS-compatible)</p>
+
+    <div id="statusMessage" class="status-message"></div>
+
+    <div class="row">
+      <div class="card">
+        <h3>Participant Information</h3>
+        <div class="form-grid">
+          <div>
+            <label for="participantName">Name *</label>
+            <input id="participantName" placeholder="Enter name" />
+          </div>
+          <div>
+            <label for="participantSex">Sex *</label>
+            <select id="participantSex">
+              <option value="">Select</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label for="participantAge">Age (years) *</label>
+            <input id="participantAge" type="number" min="5" max="120" placeholder="Age" />
+          </div>
+          <div>
+            <label for="participantMass">Mass (kg) *</label>
+            <input id="participantMass" type="number" min="20" max="300" step="0.1" placeholder="Weight" />
+          </div>
+          <div>
+            <label for="participantHeight">Height (cm) *</label>
+            <input id="participantHeight" type="number" min="50" max="250" step="0.1" placeholder="Height" />
+          </div>
+        </div>
+        <button class="btn btn-success" onclick="addParticipant()">Add Participant</button>
+
+        <div class="divider"></div>
+
+        <h3>Select Participant for Recording</h3>
+        <label for="selectedParticipant" class="mini">Choose who you’re recording (used for mass/height scaling).</label>
+        <select id="selectedParticipant"></select>
+
+        <div class="form-grid" style="margin-top:10px;">
+          <div>
+            <label for="fpsSelection">Requested FPS</label>
+            <select id="fpsSelection">
+              <option value="30">30 FPS</option>
+              <option value="60">60 FPS</option>
+              <option value="120">120 FPS</option>
+              <option value="240">240 FPS</option>
+            </select>
+          </div>
+          <div>
+            <label for="cameraFacing">Camera</label>
+            <select id="cameraFacing">
+              <option value="environment">Back camera</option>
+              <option value="user">Front camera</option>
+            </select>
+          </div>
+          <div>
+            <label for="planeSelection">Plane (single-camera = 2D)</label>
+            <select id="planeSelection">
+              <option value="sagittal">Sagittal</option>
+              <option value="frontal">Frontal</option>
+              <option value="transverse">Transverse (2D proxy)</option>
+            </select>
+          </div>
         </div>
 
-        <div id="statusMessage"></div>
-
-        <div class="video-section">
-            <div class="video-container">
-                <video id="video" playsinline></video>
-                <canvas id="canvas"></canvas>
-                <div class="fps-indicator" id="fpsIndicator">FPS: 0</div>
-            </div>
-            <div>
-                <h3>Select Participant for Recording</h3>
-                <select id="selectedParticipant" class="form-group" style="width: 100%; margin-bottom: 10px;">
-                    <option value="">Select a participant</option>
-                </select>
-                <div class="form-group">
-                    <label for="fpsSelection">Video Frame Rate</label>
-                    <select id="fpsSelection">
-                        <option value="30">30 FPS (Standard)</option>
-                        <option value="60">60 FPS (High)</option>
-                        <option value="120">120 FPS (Very High)</option>
-                        <option value="240">240 FPS (Ultra High)</option>
-                    </select>
-                </div>
-            </div>
+        <div class="hint">
+          <b>iOS note:</b> Safari may downgrade FPS even if you request 120/240. We’ll show the negotiated FPS in the HUD.
+          Also ensure <b>HTTPS</b> and allow camera permissions.
         </div>
 
-        <div class="controls">
-            <button class="btn btn-primary" onclick="startCamera()">Start Camera</button>
-            <button class="btn btn-success" onclick="startRecording()" id="recordBtn" disabled>Start Recording</button>
-            <button class="btn btn-danger" onclick="stopRecording()" id="stopBtn" disabled>Stop Recording</button>
-            <button class="btn btn-primary" onclick="stopCamera()">Stop Camera</button>
+        <div style="margin-top:10px;">
+          <button class="btn btn-primary" onclick="startCamera()">Start Camera</button>
+          <button class="btn btn-primary" onclick="stopCamera()">Stop Camera</button>
+        </div>
+        <div style="margin-top:8px;">
+          <button class="btn btn-success" onclick="startRecording()" id="recordBtn" disabled>Start Recording</button>
+          <button class="btn btn-danger" onclick="stopRecording()" id="stopBtn" disabled>Stop Recording</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Live Video + Pose Overlay</h3>
+        <div class="video-wrap">
+          <video id="video" playsinline muted></video>
+          <canvas id="canvas"></canvas>
+          <div class="hud">
+            <span id="fpsIndicator">FPS: 0</span>
+            <small id="negotiatedInfo">w×h • req 0</small>
+          </div>
         </div>
 
-        <div class="metrics-panel">
-            <h3>Real-Time Biomechanics</h3>
-            <div class="metrics-grid">
-                <div class="metric-card">
-                    <div class="metric-title">Linear Displacement</div>
-                    <div class="metric-value" id="displacement">0.00<span class="metric-unit"> m</span></div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-title">Linear Velocity</div>
-                    <div class="metric-value" id="velocity">0.00<span class="metric-unit"> m/s</span></div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-title">Knee Angle (Right)</div>
-                    <div class="metric-value" id="kneeAngle">0<span class="metric-unit">°</span></div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-title">Elbow Angle (Right)</div>
-                    <div class="metric-value" id="elbowAngle">0<span class="metric-unit">°</span></div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-title">Hip Angle (Right)</div>
-                    <div class="metric-value" id="hipAngle">0<span class="metric-unit">°</span></div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-title">Angular Velocity</div>
-                    <div class="metric-value" id="angularVelocity">0<span class="metric-unit">°/s</span></div>
-                </div>
-            </div>
+        <div class="divider"></div>
+
+        <h3>Overlay / Display Toggles</h3>
+        <div class="toggle-grid">
+          <div class="toggle"><input type="checkbox" id="optSkeleton" checked /> <label for="optSkeleton">Skeleton (stick figure)</label></div>
+          <div class="toggle"><input type="checkbox" id="optJoints" checked /> <label for="optJoints">Joints (dots)</label></div>
+          <div class="toggle"><input type="checkbox" id="optLabels" checked /> <label for="optLabels">Joint labels</label></div>
+          <div class="toggle"><input type="checkbox" id="optAngleLabels" checked /> <label for="optAngleLabels">Live angle labels</label></div>
+          <div class="toggle"><input type="checkbox" id="optCOM" checked /> <label for="optCOM">Center of Mass (COM)</label></div>
+          <div class="toggle"><input type="checkbox" id="optVelAcc" /> <label for="optVelAcc">Velocity/Acceleration arrows</label></div>
+          <div class="toggle"><input type="checkbox" id="optForce" /> <label for="optForce">Linear force (m·a)</label></div>
+          <div class="toggle"><input type="checkbox" id="optMoment" /> <label for="optMoment">Moment about COM</label></div>
+          <div class="toggle"><input type="checkbox" id="optAngMom" /> <label for="optAngMom">Angular momentum</label></div>
+          <div class="toggle"><input type="checkbox" id="optImpulse" checked /> <label for="optImpulse">Impulse + Angular impulse</label></div>
         </div>
 
-        <div class="participants-list">
-            <h3>Participants (<span id="participantCount">0</span>/10)</h3>
-            <div id="participantsList"></div>
-            <button class="btn btn-primary" onclick="downloadData()" style="margin-top: 15px;">📊 Download All Data (XLSX)</button>
+        <div class="mini">
+          Kinetics here are <b>pose-based estimates</b> from 2D video (no force plate). Use as trend indicators.
         </div>
+      </div>
     </div>
 
-    <script>
-        let detector;
-        let video;
-        let canvas;
-        let ctx;
-        let animationId;
-        let isRecording = false;
-        let recordingData = [];
-        let previousPose = null;
-        let previousTime = null;
-        let participants = [];
-        let currentParticipant = null;
-        let detectedFPS = 0;
-        let frameCount = 0;
-        let lastFPSUpdate = Date.now();
+    <div class="card">
+      <h3>Real-Time Biomechanics</h3>
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-title">Linear Displacement (COM)</div>
+          <div class="metric-value" id="displacement">0.000<span class="metric-unit"> m</span></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Linear Velocity (COM)</div>
+          <div class="metric-value" id="velocity">0.000<span class="metric-unit"> m/s</span></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Linear Acceleration (COM)</div>
+          <div class="metric-value" id="acceleration">0.000<span class="metric-unit"> m/s²</span></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Force Estimate (m·a)</div>
+          <div class="metric-value" id="forceEst">0.0<span class="metric-unit"> N</span></div>
+        </div>
 
-        async function initializePoseDetection() {
-            const model = window.poseDetection.SupportedModels.MoveNet;
-            detector = await window.poseDetection.createDetector(model, {
-                modelType: window.poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
-            });
+        <div class="metric-card">
+          <div class="metric-title">Impulse (∫|F|dt)</div>
+          <div class="metric-value" id="impulseEst">0.0<span class="metric-unit"> N·s</span></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Angular Impulse (∫τdt)</div>
+          <div class="metric-value" id="angImpulseEst">0.0<span class="metric-unit"> N·m·s</span></div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-title">Knee Angle (R / L)</div>
+          <div class="metric-value" id="kneeAngles">0 / 0<span class="metric-unit">°</span></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Elbow Angle (R / L)</div>
+          <div class="metric-value" id="elbowAngles">0 / 0<span class="metric-unit">°</span></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Hip Angle (R / L)</div>
+          <div class="metric-value" id="hipAngles">0 / 0<span class="metric-unit">°</span></div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-title">Moment about COM (2D z)</div>
+          <div class="metric-value" id="momentEst">0.0<span class="metric-unit"> N·m</span></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Angular Momentum about COM (2D z)</div>
+          <div class="metric-value" id="angMomEst">0.0<span class="metric-unit"> kg·m²/s</span></div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-title" id="planeMetricTitle">Plane Metric</div>
+          <div class="metric-value" id="planeMetricValue">0.0<span class="metric-unit">°</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card participants-list">
+      <h3>Participants (<span id="participantCount">0</span>/10)</h3>
+      <div id="participantsList"></div>
+      <button class="btn btn-primary" onclick="downloadData()" style="margin-top: 14px;">📊 Download All Data (XLSX)</button>
+    </div>
+
+  </div>
+
+<script>
+  // ======= Globals =======
+  let detector = null;
+  let video = null;
+  let canvas = null;
+  let ctx = null;
+
+  let animationId = null;
+  let streamRef = null;
+
+  let isRecording = false;
+  let recordingData = [];
+
+  let participants = [];
+  let currentParticipant = null;
+
+  let detectedFPS = 0;
+  let frameCount = 0;
+  let lastFPSUpdate = Date.now();
+
+  // Kinematics state (COM)
+  let prevState = null; // { t, com_m: {x,y}, v_mps: {x,y} }
+  let reqFps = 30;
+
+  // Impulse accumulators (live session)
+  let impulse_Ns = 0;
+  let angImpulse_Nms = 0;
+  let lastImpulseT = null;
+
+  // MoveNet keypoint indices
+  const KP = {
+    nose: 0,
+    left_eye: 1, right_eye: 2,
+    left_ear: 3, right_ear: 4,
+    shoulder_L: 5, shoulder_R: 6,
+    elbow_L: 7, elbow_R: 8,
+    wrist_L: 9, wrist_R: 10,
+    hip_L: 11, hip_R: 12,
+    knee_L: 13, knee_R: 14,
+    ankle_L: 15, ankle_R: 16
+  };
+
+  const JOINT_LABELS = [
+    "nose","left_eye","right_eye","left_ear","right_ear",
+    "shoulder_L","shoulder_R","elbow_L","elbow_R","wrist_L","wrist_R",
+    "hip_L","hip_R","knee_L","knee_R","ankle_L","ankle_R"
+  ];
+
+  const SKELETON = [
+    [KP.shoulder_L, KP.shoulder_R],
+    [KP.shoulder_L, KP.elbow_L],
+    [KP.elbow_L, KP.wrist_L],
+    [KP.shoulder_R, KP.elbow_R],
+    [KP.elbow_R, KP.wrist_R],
+    [KP.shoulder_L, KP.hip_L],
+    [KP.shoulder_R, KP.hip_R],
+    [KP.hip_L, KP.hip_R],
+    [KP.hip_L, KP.knee_L],
+    [KP.knee_L, KP.ankle_L],
+    [KP.hip_R, KP.knee_R],
+    [KP.knee_R, KP.ankle_R],
+  ];
+
+  // ======= Utilities =======
+  function showStatus(message, type) {
+    const el = document.getElementById('statusMessage');
+    el.className = `status-message status-${type}`;
+    el.textContent = message;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 3200);
+  }
+
+  function clampScore(kp, thr=0.3) {
+    return kp && typeof kp.score === "number" && kp.score >= thr;
+  }
+
+  function midpoint(a, b) {
+    return { x: (a.x + b.x)/2, y: (a.y + b.y)/2, score: Math.min(a.score ?? 0, b.score ?? 0) };
+  }
+
+  function calcAngle(p1, p2, p3) {
+    const rad = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
+    let ang = Math.abs(rad * 180 / Math.PI);
+    if (ang > 180) ang = 360 - ang;
+    return ang;
+  }
+
+  function pxToMetersScale() {
+    const h_m = currentParticipant ? (currentParticipant.height / 100) : 1.70;
+    const px = canvas ? canvas.height : 720;
+    return h_m / px;
+  }
+
+  function vecSub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
+  function vecAdd(a,b){ return {x:a.x+b.x, y:a.y+b.y}; }
+  function vecMul(a,s){ return {x:a.x*s, y:a.y*s}; }
+  function vecLen(a){ return Math.sqrt(a.x*a.x + a.y*a.y); }
+  function crossZ(a,b){ return a.x*b.y - a.y*b.x; } // 2D z-component
+
+  function drawText(text, x, y) {
+    ctx.font = '14px Segoe UI, Arial';
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillText(text, x+1, y+1);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, x, y);
+  }
+
+  function getOpts() {
+    return {
+      skeleton: document.getElementById('optSkeleton').checked,
+      joints: document.getElementById('optJoints').checked,
+      labels: document.getElementById('optLabels').checked,
+      angleLabels: document.getElementById('optAngleLabels').checked,
+      com: document.getElementById('optCOM').checked,
+      velAcc: document.getElementById('optVelAcc').checked,
+      force: document.getElementById('optForce').checked,
+      moment: document.getElementById('optMoment').checked,
+      angMom: document.getElementById('optAngMom').checked,
+      impulse: document.getElementById('optImpulse').checked,
+      plane: document.getElementById('planeSelection').value
+    };
+  }
+
+  function drawVector(originPx, vecPx, label) {
+    const tip = vecAdd(originPx, vecPx);
+
+    ctx.strokeStyle = 'rgba(0, 160, 255, 0.9)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(originPx.x, originPx.y);
+    ctx.lineTo(tip.x, tip.y);
+    ctx.stroke();
+
+    const angle = Math.atan2(vecPx.y, vecPx.x);
+    const headLen = 10;
+    ctx.beginPath();
+    ctx.moveTo(tip.x, tip.y);
+    ctx.lineTo(tip.x - headLen * Math.cos(angle - Math.PI/6), tip.y - headLen * Math.sin(angle - Math.PI/6));
+    ctx.lineTo(tip.x - headLen * Math.cos(angle + Math.PI/6), tip.y - headLen * Math.sin(angle + Math.PI/6));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(0, 160, 255, 0.9)';
+    ctx.fill();
+
+    if (label) drawText(label, tip.x + 6, tip.y + 6);
+  }
+
+  // ======= Pose Detection Init =======
+  async function initializePoseDetection() {
+    const model = window.poseDetection.SupportedModels.MoveNet;
+    detector = await window.poseDetection.createDetector(model, {
+      modelType: window.poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+    });
+  }
+
+  // ======= iOS-Friendly Camera Start =======
+  async function startCamera() {
+    try {
+      video = document.getElementById('video');
+      canvas = document.getElementById('canvas');
+      ctx = canvas.getContext('2d');
+
+      reqFps = parseInt(document.getElementById('fpsSelection').value, 10);
+      const facingMode = document.getElementById('cameraFacing').value;
+
+      video.setAttribute('playsinline', '');
+      video.muted = true;
+      video.autoplay = true;
+
+      showStatus('Requesting camera permission...', 'info');
+
+      const baseConstraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         }
+      };
 
-        async function startCamera() {
-            video = document.getElementById('video');
-            canvas = document.getElementById('canvas');
-            ctx = canvas.getContext('2d');
-            
-            const fps = parseInt(document.getElementById('fpsSelection').value);
-            
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        frameRate: { ideal: fps }
-                    }
-                });
-                
-                video.srcObject = stream;
-                await video.play();
-                
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                
-                if (!detector) {
-                    showStatus('Initializing AI model...', 'info');
-                    await initializePoseDetection();
-                    showStatus('AI model loaded successfully!', 'success');
-                }
-                
-                document.getElementById('recordBtn').disabled = false;
-                detectPose();
-            } catch (err) {
-                showStatus('Error accessing camera: ' + err.message, 'error');
-            }
+      const stream = await navigator.mediaDevices.getUserMedia(baseConstraints);
+      streamRef = stream;
+      video.srcObject = stream;
+
+      await new Promise((res) => { video.onloadedmetadata = () => res(); });
+
+      const track = stream.getVideoTracks()[0];
+      if (track && track.applyConstraints) {
+        try {
+          await track.applyConstraints({
+            frameRate: { ideal: reqFps, max: reqFps },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          });
+        } catch (e) { /* iOS may ignore fps */ }
+      }
+
+      await video.play();
+
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+
+      const track2 = stream.getVideoTracks()[0];
+      const settings = track2 && track2.getSettings ? track2.getSettings() : {};
+      const w = settings.width || video.videoWidth || 0;
+      const h = settings.height || video.videoHeight || 0;
+      const fr = settings.frameRate || 0;
+      document.getElementById('negotiatedInfo').textContent = `${w}×${h} • req ${reqFps}fps • got ${fr || "?"}fps`;
+
+      if (!detector) {
+        showStatus('Loading pose model...', 'info');
+        await initializePoseDetection();
+        showStatus('Pose model ready ✅', 'success');
+      } else {
+        showStatus('Camera started ✅', 'success');
+      }
+
+      document.getElementById('recordBtn').disabled = false;
+
+      // Reset session accumulators
+      prevState = null;
+      impulse_Ns = 0;
+      angImpulse_Nms = 0;
+      lastImpulseT = null;
+
+      if (animationId) cancelAnimationFrame(animationId);
+      detectPose();
+
+    } catch (err) {
+      showStatus('Error accessing camera: ' + (err.message || err), 'error');
+      console.error(err);
+    }
+  }
+
+  function stopCamera() {
+    try {
+      if (animationId) cancelAnimationFrame(animationId);
+      animationId = null;
+
+      if (video) {
+        video.pause();
+        video.srcObject = null;
+      }
+
+      if (streamRef) {
+        streamRef.getTracks().forEach(t => t.stop());
+        streamRef = null;
+      }
+
+      document.getElementById('recordBtn').disabled = true;
+      document.getElementById('stopBtn').disabled = true;
+
+      isRecording = false;
+      recordingData = [];
+      currentParticipant = null;
+
+      showStatus('Camera stopped.', 'info');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // ======= Main Loop =======
+  async function detectPose() {
+    if (!video || video.readyState < 2 || !detector) {
+      animationId = requestAnimationFrame(detectPose);
+      return;
+    }
+
+    const poses = await detector.estimatePoses(video);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (poses && poses.length > 0) {
+      const pose = poses[0];
+      const keypoints = pose.keypoints;
+      const opts = getOpts();
+
+      // neck as mid-shoulders
+      const shL = keypoints[KP.shoulder_L];
+      const shR = keypoints[KP.shoulder_R];
+      const neck = (clampScore(shL) && clampScore(shR)) ? midpoint(shL, shR) : null;
+
+      drawOverlay(keypoints, neck, opts);
+
+      const frameMetrics = calculateMetrics(keypoints, neck, opts);
+
+      if (isRecording && currentParticipant) {
+        recordFrame(keypoints, neck, frameMetrics);
+      }
+    }
+
+    updateFPS();
+    animationId = requestAnimationFrame(detectPose);
+  }
+
+  // ======= Drawing =======
+  function drawOverlay(keypoints, neck, opts) {
+    // Skeleton
+    if (opts.skeleton) {
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)';
+      for (const [i,j] of SKELETON) {
+        const a = keypoints[i], b = keypoints[j];
+        if (clampScore(a) && clampScore(b)) {
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
         }
-
-        function stopCamera() {
-            if (video && video.srcObject) {
-                video.srcObject.getTracks().forEach(track => track.stop());
-                if (animationId) cancelAnimationFrame(animationId);
-                document.getElementById('recordBtn').disabled = true;
-                document.getElementById('stopBtn').disabled = true;
-                isRecording = false;
-            }
+      }
+      // neck->pelvis line
+      if (neck) {
+        const hipL = keypoints[KP.hip_L], hipR = keypoints[KP.hip_R];
+        if (clampScore(hipL) && clampScore(hipR)) {
+          const pelvis = midpoint(hipL, hipR);
+          ctx.strokeStyle = 'rgba(255, 120, 0, 0.9)';
+          ctx.beginPath();
+          ctx.moveTo(neck.x, neck.y);
+          ctx.lineTo(pelvis.x, pelvis.y);
+          ctx.stroke();
         }
+      }
+    }
 
-        async function detectPose() {
-            if (!video || video.readyState !== 4) {
-                animationId = requestAnimationFrame(detectPose);
-                return;
-            }
+    // Joints + labels
+    if (opts.joints) {
+      for (let i=0; i<keypoints.length; i++) {
+        const kp = keypoints[i];
+        if (clampScore(kp)) {
+          ctx.beginPath();
+          ctx.arc(kp.x, kp.y, 5, 0, 2*Math.PI);
+          ctx.fillStyle = 'rgba(0, 255, 0, 0.95)';
+          ctx.fill();
 
-            const poses = await detector.estimatePoses(video);
-            
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            if (poses.length > 0) {
-                const pose = poses[0];
-                drawSkeleton(pose.keypoints);
-                calculateMetrics(pose.keypoints);
-                
-                if (isRecording && currentParticipant) {
-                    recordFrame(pose.keypoints);
-                }
-            }
-            
-            updateFPS();
-            animationId = requestAnimationFrame(detectPose);
+          if (opts.labels) drawText(JOINT_LABELS[i], kp.x + 8, kp.y - 8);
         }
+      }
 
-        function drawSkeleton(keypoints) {
-            const connections = [
-                [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
-                [5, 11], [6, 12], [11, 12],
-                [11, 13], [13, 15], [12, 14], [14, 16]
-            ];
+      if (neck) {
+        ctx.beginPath();
+        ctx.arc(neck.x, neck.y, 6, 0, 2*Math.PI);
+        ctx.fillStyle = 'rgba(0, 200, 255, 0.95)';
+        ctx.fill();
+        if (opts.labels) drawText('neck', neck.x + 8, neck.y - 8);
+      }
+    }
+  }
 
-            keypoints.forEach(kp => {
-                if (kp.score > 0.3) {
-                    ctx.beginPath();
-                    ctx.arc(kp.x, kp.y, 5, 0, 2 * Math.PI);
-                    ctx.fillStyle = '#00ff00';
-                    ctx.fill();
-                }
-            });
+  // ======= Metrics =======
+  function calculateMetrics(keypoints, neck, opts) {
+    const hipR = keypoints[KP.hip_R], kneeR = keypoints[KP.knee_R], ankleR = keypoints[KP.ankle_R];
+    const shR  = keypoints[KP.shoulder_R], elbowR = keypoints[KP.elbow_R], wristR = keypoints[KP.wrist_R];
 
-            connections.forEach(([i, j]) => {
-                const kp1 = keypoints[i];
-                const kp2 = keypoints[j];
-                if (kp1.score > 0.3 && kp2.score > 0.3) {
-                    ctx.beginPath();
-                    ctx.moveTo(kp1.x, kp1.y);
-                    ctx.lineTo(kp2.x, kp2.y);
-                    ctx.strokeStyle = '#ff0000';
-                    ctx.lineWidth = 3;
-                    ctx.stroke();
-                }
-            });
+    const hipL = keypoints[KP.hip_L], kneeL = keypoints[KP.knee_L], ankleL = keypoints[KP.ankle_L];
+    const shL  = keypoints[KP.shoulder_L], elbowL = keypoints[KP.elbow_L], wristL = keypoints[KP.wrist_L];
+
+    // Angles
+    let kneeAngR=null, kneeAngL=null, elbowAngR=null, elbowAngL=null, hipAngR=null, hipAngL=null;
+
+    if (clampScore(hipR) && clampScore(kneeR) && clampScore(ankleR)) kneeAngR = calcAngle(hipR, kneeR, ankleR);
+    if (clampScore(hipL) && clampScore(kneeL) && clampScore(ankleL)) kneeAngL = calcAngle(hipL, kneeL, ankleL);
+
+    if (clampScore(shR) && clampScore(elbowR) && clampScore(wristR)) elbowAngR = calcAngle(shR, elbowR, wristR);
+    if (clampScore(shL) && clampScore(elbowL) && clampScore(wristL)) elbowAngL = calcAngle(shL, elbowL, wristL);
+
+    if (clampScore(shR) && clampScore(hipR) && clampScore(kneeR)) hipAngR = calcAngle(shR, hipR, kneeR);
+    if (clampScore(shL) && clampScore(hipL) && clampScore(kneeL)) hipAngL = calcAngle(shL, hipL, kneeL);
+
+    // UI angle summaries
+    document.getElementById('kneeAngles').innerHTML =
+      `${kneeAngR ? Math.round(kneeAngR) : 0} / ${kneeAngL ? Math.round(kneeAngL) : 0}<span class="metric-unit">°</span>`;
+    document.getElementById('elbowAngles').innerHTML =
+      `${elbowAngR ? Math.round(elbowAngR) : 0} / ${elbowAngL ? Math.round(elbowAngL) : 0}<span class="metric-unit">°</span>`;
+    document.getElementById('hipAngles').innerHTML =
+      `${hipAngR ? Math.round(hipAngR) : 0} / ${hipAngL ? Math.round(hipAngL) : 0}<span class="metric-unit">°</span>`;
+
+    // Live angle labels (overlay near joints)
+    if (opts.angleLabels) {
+      if (kneeAngR && clampScore(kneeR)) drawText(`Knee R ${Math.round(kneeAngR)}°`, kneeR.x + 10, kneeR.y + 18);
+      if (kneeAngL && clampScore(kneeL)) drawText(`Knee L ${Math.round(kneeAngL)}°`, kneeL.x + 10, kneeL.y + 18);
+
+      if (elbowAngR && clampScore(elbowR)) drawText(`Elbow R ${Math.round(elbowAngR)}°`, elbowR.x + 10, elbowR.y + 18);
+      if (elbowAngL && clampScore(elbowL)) drawText(`Elbow L ${Math.round(elbowAngL)}°`, elbowL.x + 10, elbowL.y + 18);
+
+      if (hipAngR && clampScore(hipR)) drawText(`Hip R ${Math.round(hipAngR)}°`, hipR.x + 10, hipR.y + 18);
+      if (hipAngL && clampScore(hipL)) drawText(`Hip L ${Math.round(hipAngL)}°`, hipL.x + 10, hipL.y + 18);
+    }
+
+    // COM estimate
+    let comPx = null;
+    const okSh = clampScore(shL) && clampScore(shR);
+    const okHp = clampScore(hipL) && clampScore(hipR);
+
+    let shMid=null, hpMid=null;
+    if (okSh) shMid = midpoint(shL, shR);
+    if (okHp) hpMid = midpoint(hipL, hipR);
+
+    if (okSh && okHp) {
+      comPx = { x: (shMid.x*0.4 + hpMid.x*0.6), y: (shMid.y*0.4 + hpMid.y*0.6) };
+    } else if (okHp) {
+      comPx = { x: hpMid.x, y: hpMid.y };
+    } else if (clampScore(hipR)) {
+      comPx = { x: hipR.x, y: hipR.y };
+    }
+
+    // Draw COM
+    if (opts.com && comPx) {
+      ctx.beginPath();
+      ctx.arc(comPx.x, comPx.y, 7, 0, 2*Math.PI);
+      ctx.fillStyle = 'rgba(255, 255, 0, 0.95)';
+      ctx.fill();
+      drawText('COM', comPx.x + 8, comPx.y - 8);
+    }
+
+    // Kinematics (meters)
+    const t = performance.now() / 1000;
+    const s = pxToMetersScale();
+
+    let displacement_m = 0, speed_mps = 0, acc_mps2_mag = 0;
+    let v_mps = {x:0,y:0};
+    let a_mps2 = {x:0,y:0};
+
+    if (comPx) {
+      const com_m = { x: comPx.x * s, y: comPx.y * s };
+
+      if (prevState) {
+        const dt = t - prevState.t;
+        if (dt > 0.0001) {
+          const d = vecSub(com_m, prevState.com_m);
+          displacement_m = vecLen(d);
+          v_mps = vecMul(d, 1/dt);
+          speed_mps = vecLen(v_mps);
+
+          const dv = vecSub(v_mps, prevState.v_mps);
+          a_mps2 = vecMul(dv, 1/dt);
+          acc_mps2_mag = vecLen(a_mps2);
         }
+      }
 
-        function calculateAngle(p1, p2, p3) {
-            const rad = Math.atan2(p3.y - p2.y, p3.x - p2.x) - 
-                        Math.atan2(p1.y - p2.y, p1.x - p2.x);
-            let angle = Math.abs(rad * 180 / Math.PI);
-            if (angle > 180) angle = 360 - angle;
-            return Math.round(angle);
+      prevState = { t, com_m, v_mps };
+    } else {
+      prevState = null;
+    }
+
+    document.getElementById('displacement').innerHTML =
+      `${displacement_m.toFixed(3)}<span class="metric-unit"> m</span>`;
+    document.getElementById('velocity').innerHTML =
+      `${speed_mps.toFixed(3)}<span class="metric-unit"> m/s</span>`;
+    document.getElementById('acceleration').innerHTML =
+      `${acc_mps2_mag.toFixed(3)}<span class="metric-unit"> m/s²</span>`;
+
+    // Force estimate
+    const mass = currentParticipant ? currentParticipant.mass : 70;
+    const Fvec_N = { x: mass * a_mps2.x, y: mass * a_mps2.y };
+    const Fmag_N = vecLen(Fvec_N);
+
+    document.getElementById('forceEst').innerHTML =
+      `${Fmag_N.toFixed(1)}<span class="metric-unit"> N</span>`;
+
+    // Moment about COM (tau_z = r x F)
+    let tau_Nm = 0;
+    if (comPx && okHp) {
+      const pelvisPx = hpMid;
+      const r_m = { x: (pelvisPx.x - comPx.x) * s, y: (pelvisPx.y - comPx.y) * s };
+      tau_Nm = crossZ(r_m, Fvec_N);
+    }
+    document.getElementById('momentEst').innerHTML =
+      `${tau_Nm.toFixed(2)}<span class="metric-unit"> N·m</span>`;
+
+    // Angular momentum about COM (2D z) using lumped points
+    let Lz = 0;
+    if (comPx && prevState) {
+      const com_m = prevState.com_m;
+
+      const lumps = [
+        { name:'shoulder_L', kp: shL, m: mass*0.10 },
+        { name:'shoulder_R', kp: shR, m: mass*0.10 },
+        { name:'hip_L', kp: hipL, m: mass*0.20 },
+        { name:'hip_R', kp: hipR, m: mass*0.20 },
+        { name:'knee_L', kp: kneeL, m: mass*0.10 },
+        { name:'knee_R', kp: kneeR, m: mass*0.10 },
+        { name:'ankle_L', kp: ankleL, m: mass*0.05 },
+        { name:'ankle_R', kp: ankleR, m: mass*0.05 },
+        { name:'wrist_L', kp: wristL, m: mass*0.05 },
+        { name:'wrist_R', kp: wristR, m: mass*0.05 },
+      ];
+
+      if (!window._prevKpMap) window._prevKpMap = null;
+      if (!window._prevKpTime) window._prevKpTime = null;
+
+      if (window._prevKpMap && window._prevKpTime) {
+        const dt = t - window._prevKpTime;
+        if (dt > 0.0001) {
+          for (const L of lumps) {
+            if (!clampScore(L.kp)) continue;
+            const prev = window._prevKpMap[L.name];
+            if (!prev) continue;
+
+            const pos_m = { x: L.kp.x * s, y: L.kp.y * s };
+            const prev_m = { x: prev.x * s, y: prev.y * s };
+            const v_i = vecMul(vecSub(pos_m, prev_m), 1/dt);
+            const r_i = vecSub(pos_m, com_m);
+
+            Lz += L.m * crossZ(r_i, v_i);
+          }
         }
+      }
 
-        function calculateDistance(p1, p2) {
-            return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+      const map = {};
+      map['shoulder_L'] = shL; map['shoulder_R'] = shR;
+      map['hip_L'] = hipL; map['hip_R'] = hipR;
+      map['knee_L'] = kneeL; map['knee_R'] = kneeR;
+      map['ankle_L'] = ankleL; map['ankle_R'] = ankleR;
+      map['wrist_L'] = wristL; map['wrist_R'] = wristR;
+      window._prevKpMap = map;
+      window._prevKpTime = t;
+    }
+    document.getElementById('angMomEst').innerHTML =
+      `${Lz.toFixed(2)}<span class="metric-unit"> kg·m²/s</span>`;
+
+    // Impulse + Angular impulse (live integration)
+    if (opts.impulse) {
+      if (lastImpulseT != null) {
+        const dt = t - lastImpulseT;
+        if (dt > 0.0001 && dt < 0.2) { // guard for big jumps
+          impulse_Ns += Fmag_N * dt;
+          angImpulse_Nms += tau_Nm * dt;
         }
+      }
+      lastImpulseT = t;
 
-        function calculateMetrics(keypoints) {
-            const hip = keypoints[12];
-            const knee = keypoints[14];
-            const ankle = keypoints[16];
-            const shoulder = keypoints[6];
-            const elbow = keypoints[8];
-            const wrist = keypoints[10];
+      document.getElementById('impulseEst').innerHTML =
+        `${impulse_Ns.toFixed(2)}<span class="metric-unit"> N·s</span>`;
+      document.getElementById('angImpulseEst').innerHTML =
+        `${angImpulse_Nms.toFixed(2)}<span class="metric-unit"> N·m·s</span>`;
+    }
 
-            if (knee.score > 0.3 && hip.score > 0.3 && ankle.score > 0.3) {
-                const kneeAngle = calculateAngle(hip, knee, ankle);
-                document.getElementById('kneeAngle').innerHTML = 
-                    kneeAngle + '<span class="metric-unit">°</span>';
-            }
+    // Optional arrows
+    if (comPx && opts.velAcc) {
+      const scalePx = 120;
+      const v_px = { x: v_mps.x / s * (scalePx * 0.01), y: v_mps.y / s * (scalePx * 0.01) };
+      const a_px = { x: a_mps2.x / s * (scalePx * 0.003), y: a_mps2.y / s * (scalePx * 0.003) };
+      drawVector(comPx, v_px, 'v');
+      drawVector(comPx, a_px, 'a');
+    }
+    if (comPx && opts.force) {
+      const scalePx = 120;
+      const a_px = { x: a_mps2.x / s * (scalePx * 0.003), y: a_mps2.y / s * (scalePx * 0.003) };
+      drawVector(comPx, a_px, 'F');
+    }
+    if (comPx && (opts.moment || opts.angMom)) {
+      let y = comPx.y + 18;
+      if (opts.moment) { drawText(`τz: ${tau_Nm.toFixed(2)} N·m`, comPx.x + 10, y); y += 16; }
+      if (opts.angMom) { drawText(`Lz: ${Lz.toFixed(2)} kg·m²/s`, comPx.x + 10, y); }
+    }
 
-            if (shoulder.score > 0.3 && elbow.score > 0.3 && wrist.score > 0.3) {
-                const elbowAngle = calculateAngle(shoulder, elbow, wrist);
-                document.getElementById('elbowAngle').innerHTML = 
-                    elbowAngle + '<span class="metric-unit">°</span>';
-            }
+    // Plane-specific proxy metric
+    const plane = opts.plane;
+    let planeMetricDeg = 0;
+    let title = 'Plane Metric';
 
-            const leftHip = keypoints[11];
-            const rightHip = keypoints[12];
-            const leftShoulder = keypoints[5];
-            
-            if (leftHip.score > 0.3 && rightHip.score > 0.3 && leftShoulder.score > 0.3) {
-                const hipAngle = calculateAngle(leftShoulder, leftHip, knee);
-                document.getElementById('hipAngle').innerHTML = 
-                    hipAngle + '<span class="metric-unit">°</span>';
-            }
+    if (plane === 'sagittal') {
+      // trunk lean = angle of torso (shoulder mid -> hip mid) relative to vertical
+      title = 'Trunk Lean (Sagittal proxy)';
+      if (okSh && okHp) {
+        const torso = vecSub(hpMid, shMid); // downwards vector
+        // angle from vertical axis
+        const ang = Math.atan2(torso.x, torso.y) * 180/Math.PI; // x vs y gives left/right lean too
+        planeMetricDeg = Math.abs(ang);
+      }
+    } else if (plane === 'frontal') {
+      // pelvic tilt proxy: hip line angle vs horizontal
+      title = 'Pelvic Tilt (Frontal proxy)';
+      if (okHp) {
+        const dx = hipR.x - hipL.x;
+        const dy = hipR.y - hipL.y;
+        planeMetricDeg = Math.abs(Math.atan2(dy, dx) * 180/Math.PI);
+      }
+    } else if (plane === 'transverse') {
+      // transverse proxy: compare shoulder line angle vs hip line angle (screen-plane proxy)
+      title = 'Torso Rotation (Transverse proxy)';
+      if (okSh && okHp) {
+        const dxS = shR.x - shL.x;
+        const dyS = shR.y - shL.y;
+        const dxH = hipR.x - hipL.x;
+        const dyH = hipR.y - hipL.y;
+        const angS = Math.atan2(dyS, dxS) * 180/Math.PI;
+        const angH = Math.atan2(dyH, dxH) * 180/Math.PI;
+        let diff = angS - angH;
+        diff = ((diff + 180) % 360) - 180;
+        planeMetricDeg = Math.abs(diff);
+      }
+    }
 
-            const currentTime = Date.now() / 1000;
-            if (previousPose && previousTime) {
-                const dt = currentTime - previousTime;
-                
-                const pixelsToMeters = currentParticipant ? 
-                    (currentParticipant.height / 100) / canvas.height : 0.002;
-                
-                const centerPrev = previousPose[0];
-                const centerCurr = hip;
-                
-                if (centerPrev && centerCurr.score > 0.3) {
-                    const dx = (centerCurr.x - centerPrev.x) * pixelsToMeters;
-                    const dy = (centerCurr.y - centerPrev.y) * pixelsToMeters;
-                    const displacement = Math.sqrt(dx * dx + dy * dy);
-                    const velocity = dt > 0 ? displacement / dt : 0;
-                    
-                    document.getElementById('displacement').innerHTML = 
-                        displacement.toFixed(2) + '<span class="metric-unit"> m</span>';
-                    document.getElementById('velocity').innerHTML = 
-                        velocity.toFixed(2) + '<span class="metric-unit"> m/s</span>';
-                }
+    document.getElementById('planeMetricTitle').textContent = title;
+    document.getElementById('planeMetricValue').innerHTML =
+      `${planeMetricDeg.toFixed(1)}<span class="metric-unit">°</span>`;
 
-                if (previousPose[14] && knee.score > 0.3) {
-                    const prevAngle = calculateAngle(previousPose[12], previousPose[14], previousPose[16]);
-                    const currAngle = calculateAngle(hip, knee, ankle);
-                    const angularVel = dt > 0 ? (currAngle - prevAngle) / dt : 0;
-                    
-                    document.getElementById('angularVelocity').innerHTML = 
-                        Math.abs(angularVel).toFixed(1) + '<span class="metric-unit">°/s</span>';
-                }
-            }
-            
-            previousPose = keypoints;
-            previousTime = currentTime;
-        }
+    return {
+      kneeAngR, kneeAngL, elbowAngR, elbowAngL, hipAngR, hipAngL,
+      comPx,
+      displacement_m,
+      speed_mps,
+      acc_mps2: acc_mps2_mag,
+      forceVec_N: Fvec_N,
+      forceMag_N: Fmag_N,
+      moment_Nm: tau_Nm,
+      angMom: Lz,
+      impulse_Ns,
+      angImpulse_Nms,
+      plane,
+      planeMetricDeg,
+      neckPx: neck ? {x: neck.x, y: neck.y} : null
+    };
+  }
 
-        function updateFPS() {
-            frameCount++;
-            const now = Date.now();
-            if (now - lastFPSUpdate >= 1000) {
-                detectedFPS = frameCount;
-                document.getElementById('fpsIndicator').textContent = `FPS: ${detectedFPS}`;
-                frameCount = 0;
-                lastFPSUpdate = now;
-            }
-        }
+  function updateFPS() {
+    frameCount++;
+    const now = Date.now();
+    if (now - lastFPSUpdate >= 1000) {
+      detectedFPS = frameCount;
+      document.getElementById('fpsIndicator').textContent = `FPS: ${detectedFPS}`;
+      frameCount = 0;
+      lastFPSUpdate = now;
+    }
+  }
 
-        function addParticipant() {
-            if (participants.length >= 10) {
-                showStatus('Maximum 10 participants reached!', 'error');
-                return;
-            }
+  // ======= Participants =======
+  function addParticipant() {
+    if (participants.length >= 10) {
+      showStatus('Maximum 10 participants reached!', 'error');
+      return;
+    }
+    const name = document.getElementById('participantName').value.trim();
+    const sex = document.getElementById('participantSex').value;
+    const age = document.getElementById('participantAge').value;
+    const mass = document.getElementById('participantMass').value;
+    const height = document.getElementById('participantHeight').value;
 
-            const name = document.getElementById('participantName').value.trim();
-            const sex = document.getElementById('participantSex').value;
-            const age = document.getElementById('participantAge').value;
-            const mass = document.getElementById('participantMass').value;
-            const height = document.getElementById('participantHeight').value;
+    if (!name || !sex || !age || !mass || !height) {
+      showStatus('Please fill in all participant information!', 'error');
+      return;
+    }
 
-            if (!name || !sex || !age || !mass || !height) {
-                showStatus('Please fill in all participant information!', 'error');
-                return;
-            }
+    const participant = {
+      id: Date.now(),
+      name,
+      sex,
+      age: parseInt(age, 10),
+      mass: parseFloat(mass),
+      height: parseFloat(height),
+      recordings: []
+    };
+    participants.push(participant);
 
-            const participant = {
-                id: Date.now(),
-                name, sex, age: parseInt(age), 
-                mass: parseFloat(mass), 
-                height: parseFloat(height),
-                recordings: []
-            };
+    updateParticipantsList();
+    clearParticipantForm();
+    showStatus(`Participant "${name}" added ✅`, 'success');
+  }
 
-            participants.push(participant);
-            updateParticipantsList();
-            clearParticipantForm();
-            showStatus(`Participant "${name}" added successfully!`, 'success');
-        }
+  function clearParticipantForm() {
+    document.getElementById('participantName').value = '';
+    document.getElementById('participantSex').value = '';
+    document.getElementById('participantAge').value = '';
+    document.getElementById('participantMass').value = '';
+    document.getElementById('participantHeight').value = '';
+  }
 
-        function clearParticipantForm() {
-            document.getElementById('participantName').value = '';
-            document.getElementById('participantSex').value = '';
-            document.getElementById('participantAge').value = '';
-            document.getElementById('participantMass').value = '';
-            document.getElementById('participantHeight').value = '';
-        }
+  function updateParticipantsList() {
+    document.getElementById('participantCount').textContent = participants.length;
 
-        function updateParticipantsList() {
-            const list = document.getElementById('participantsList');
-            const select = document.getElementById('selectedParticipant');
-            
-            document.getElementById('participantCount').textContent = participants.length;
-            
-            list.innerHTML = participants.map(p => `
-                <div class="participant-item">
-                    <div class="participant-info">
-                        <strong>${p.name}</strong> - ${p.sex}, ${p.age}y, ${p.mass}kg, ${p.height}cm
-                        <br><small>Recordings: ${p.recordings.length}</small>
-                    </div>
-                    <button class="btn btn-danger" onclick="removeParticipant(${p.id})">Remove</button>
-                </div>
-            `).join('');
+    const list = document.getElementById('participantsList');
+    list.innerHTML = participants.map(p => `
+      <div class="participant-item">
+        <div class="participant-info">
+          <strong>${p.name}</strong> — ${p.sex}, ${p.age}y, ${p.mass}kg, ${p.height}cm
+          <br/><small>Recordings: ${p.recordings.length}</small>
+        </div>
+        <button class="btn btn-danger" onclick="removeParticipant(${p.id})">Remove</button>
+      </div>
+    `).join('');
 
-            select.innerHTML = '<option value="">Select a participant</option>' +
-                participants.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-        }
+    const sel = document.getElementById('selectedParticipant');
+    sel.innerHTML = '<option value="">Select a participant</option>' +
+      participants.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  }
 
-        function removeParticipant(id) {
-            participants = participants.filter(p => p.id !== id);
-            updateParticipantsList();
-            showStatus('Participant removed', 'info');
-        }
+  function removeParticipant(id) {
+    participants = participants.filter(p => p.id !== id);
+    if (currentParticipant && currentParticipant.id === id) currentParticipant = null;
+    updateParticipantsList();
+    showStatus('Participant removed.', 'info');
+  }
 
-        function startRecording() {
-            const selectedId = document.getElementById('selectedParticipant').value;
-            if (!selectedId) {
-                showStatus('Please select a participant first!', 'error');
-                return;
-            }
+  // ======= Recording =======
+  function startRecording() {
+    const selectedId = document.getElementById('selectedParticipant').value;
+    if (!selectedId) {
+      showStatus('Please select a participant first!', 'error');
+      return;
+    }
+    currentParticipant = participants.find(p => String(p.id) === String(selectedId));
+    if (!currentParticipant) {
+      showStatus('Participant not found.', 'error');
+      return;
+    }
 
-            currentParticipant = participants.find(p => p.id == selectedId);
-            isRecording = true;
-            recordingData = [];
-            document.getElementById('recordBtn').disabled = true;
-            document.getElementById('stopBtn').disabled = false;
-            showStatus(`Recording for ${currentParticipant.name}...`, 'info');
-        }
+    isRecording = true;
+    recordingData = [];
 
-        function stopRecording() {
-            if (isRecording && currentParticipant && recordingData.length > 0) {
-                currentParticipant.recordings.push({
-                    timestamp: new Date().toISOString(),
-                    fps: detectedFPS,
-                    data: recordingData
-                });
-                updateParticipantsList();
-                showStatus(`Recording saved! ${recordingData.length} frames captured.`, 'success');
-            }
-            
-            isRecording = false;
-            recordingData = [];
-            currentParticipant = null;
-            document.getElementById('recordBtn').disabled = false;
-            document.getElementById('stopBtn').disabled = true;
-        }
+    // reset impulse integrators for this recording
+    impulse_Ns = 0;
+    angImpulse_Nms = 0;
+    lastImpulseT = null;
 
-        function recordFrame(keypoints) {
-            const hip = keypoints[12];
-            const knee = keypoints[14];
-            const ankle = keypoints[16];
-            const shoulder = keypoints[6];
-            const elbow = keypoints[8];
-            const wrist = keypoints[10];
+    document.getElementById('recordBtn').disabled = true;
+    document.getElementById('stopBtn').disabled = false;
 
-            recordingData.push({
-                timestamp: Date.now(),
-                kneeAngle: knee.score > 0.3 ? calculateAngle(hip, knee, ankle) : null,
-                elbowAngle: elbow.score > 0.3 ? calculateAngle(shoulder, elbow, wrist) : null,
-                hipPosition: hip.score > 0.3 ? { x: hip.x, y: hip.y } : null
-            });
-        }
+    showStatus(`Recording for ${currentParticipant.name}...`, 'info');
+  }
 
-        function downloadData() {
-            if (participants.length === 0) {
-                showStatus('No participants to export!', 'error');
-                return;
-            }
+  function stopRecording() {
+    if (isRecording && currentParticipant && recordingData.length > 0) {
+      currentParticipant.recordings.push({
+        timestamp: new Date().toISOString(),
+        requestedFPS: reqFps,
+        detectedFPS,
+        plane: document.getElementById('planeSelection').value,
+        totalImpulse_Ns: impulse_Ns,
+        totalAngImpulse_Nms: angImpulse_Nms,
+        data: recordingData
+      });
+      updateParticipantsList();
+      showStatus(`Saved ✅ ${recordingData.length} frames`, 'success');
+    } else {
+      showStatus('Recording stopped (no frames saved).', 'info');
+    }
 
-            const wb = XLSX.utils.book_new();
+    isRecording = false;
+    recordingData = [];
+    currentParticipant = null;
 
-            participants.forEach(participant => {
-                const sheetData = [
-                    ['Participant Information'],
-                    ['Name', participant.name],
-                    ['Sex', participant.sex],
-                    ['Age', participant.age],
-                    ['Mass (kg)', participant.mass],
-                    ['Height (cm)', participant.height],
-                    [],
-                    ['Recordings', participant.recordings.length]
-                ];
+    document.getElementById('recordBtn').disabled = false;
+    document.getElementById('stopBtn').disabled = true;
+  }
 
-                participant.recordings.forEach((recording, idx) => {
-                    sheetData.push([]);
-                    sheetData.push([`Recording ${idx + 1}`, recording.timestamp]);
-                    sheetData.push(['FPS', recording.fps]);
-                    sheetData.push(['Frame', 'Timestamp (ms)', 'Knee Angle (°)', 'Elbow Angle (°)', 'Hip X', 'Hip Y']);
-                    
-                    recording.data.forEach((frame, frameIdx) => {
-                        sheetData.push([
-                            frameIdx,
-                            frame.timestamp,
-                            frame.kneeAngle || 'N/A',
-                            frame.elbowAngle || 'N/A',
-                            frame.hipPosition ? frame.hipPosition.x.toFixed(2) : 'N/A',
-                            frame.hipPosition ? frame.hipPosition.y.toFixed(2) : 'N/A'
-                        ]);
-                    });
-                });
+  function pickJoint(keypoints, idx) {
+    const kp = keypoints[idx];
+    return clampScore(kp) ? { x: kp.x, y: kp.y, score: kp.score } : null;
+  }
 
-                const ws = XLSX.utils.aoa_to_sheet(sheetData);
-                XLSX.utils.book_append_sheet(wb, ws, participant.name.substring(0, 31));
-            });
+  function recordFrame(keypoints, neck, frameMetrics) {
+    const joints = {
+      shoulder_L: pickJoint(keypoints, KP.shoulder_L),
+      shoulder_R: pickJoint(keypoints, KP.shoulder_R),
+      elbow_L: pickJoint(keypoints, KP.elbow_L),
+      elbow_R: pickJoint(keypoints, KP.elbow_R),
+      wrist_L: pickJoint(keypoints, KP.wrist_L),
+      wrist_R: pickJoint(keypoints, KP.wrist_R),
+      hip_L: pickJoint(keypoints, KP.hip_L),
+      hip_R: pickJoint(keypoints, KP.hip_R),
+      knee_L: pickJoint(keypoints, KP.knee_L),
+      knee_R: pickJoint(keypoints, KP.knee_R),
+      ankle_L: pickJoint(keypoints, KP.ankle_L),
+      ankle_R: pickJoint(keypoints, KP.ankle_R),
+      neck: (neck ? { x: neck.x, y: neck.y, score: neck.score ?? 0.5 } : null)
+    };
 
-            XLSX.writeFile(wb, `sport_performance_data_${new Date().toISOString().split('T')[0]}.xlsx`);
-            showStatus('Data exported successfully!', 'success');
-        }
+    recordingData.push({
+      t_ms: Date.now(),
+      fpsDetected: detectedFPS,
+      plane: frameMetrics.plane,
+      planeMetricDeg: frameMetrics.planeMetricDeg,
 
-        function showStatus(message, type) {
-            const statusDiv = document.getElementById('statusMessage');
-            statusDiv.className = `status-message status-${type}`;
-            statusDiv.textContent = message;
-            statusDiv.style.display = 'block';
-            
-            setTimeout(() => {
-                statusDiv.style.display = 'none';
-            }, 3000);
-        }
+      joints,
 
-        window.addEventListener('load', () => {
-            showStatus('Ready to start! Add participants to begin.', 'info');
+      kneeAngle_R: frameMetrics.kneeAngR ?? null,
+      kneeAngle_L: frameMetrics.kneeAngL ?? null,
+      elbowAngle_R: frameMetrics.elbowAngR ?? null,
+      elbowAngle_L: frameMetrics.elbowAngL ?? null,
+      hipAngle_R: frameMetrics.hipAngR ?? null,
+      hipAngle_L: frameMetrics.hipAngL ?? null,
+
+      comPx: frameMetrics.comPx ? { x: frameMetrics.comPx.x, y: frameMetrics.comPx.y } : null,
+
+      disp_m: frameMetrics.displacement_m ?? 0,
+      speed_mps: frameMetrics.speed_mps ?? 0,
+      acc_mps2: frameMetrics.acc_mps2 ?? 0,
+
+      forceMag_N: frameMetrics.forceMag_N ?? 0,
+      moment_Nm: frameMetrics.moment_Nm ?? 0,
+      angMom_z: frameMetrics.angMom ?? 0,
+
+      impulse_Ns: frameMetrics.impulse_Ns ?? 0,
+      angImpulse_Nms: frameMetrics.angImpulse_Nms ?? 0
+    });
+  }
+
+  // ======= XLSX Export =======
+  function downloadData() {
+    if (participants.length === 0) {
+      showStatus('No participants to export!', 'error');
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    participants.forEach(participant => {
+      const sheetData = [];
+      sheetData.push(['Participant Information']);
+      sheetData.push(['Name', participant.name]);
+      sheetData.push(['Sex', participant.sex]);
+      sheetData.push(['Age', participant.age]);
+      sheetData.push(['Mass (kg)', participant.mass]);
+      sheetData.push(['Height (cm)', participant.height]);
+      sheetData.push([]);
+      sheetData.push(['Recordings', participant.recordings.length]);
+
+      participant.recordings.forEach((rec, idx) => {
+        sheetData.push([]);
+        sheetData.push([`Recording ${idx + 1}`, rec.timestamp]);
+        sheetData.push(['Plane', rec.plane]);
+        sheetData.push(['Requested FPS', rec.requestedFPS]);
+        sheetData.push(['Detected FPS', rec.detectedFPS]);
+        sheetData.push(['Total Impulse (N·s)', Number((rec.totalImpulse_Ns ?? 0).toFixed(3))]);
+        sheetData.push(['Total Angular Impulse (N·m·s)', Number((rec.totalAngImpulse_Nms ?? 0).toFixed(3))]);
+        sheetData.push([]);
+
+        const header = [
+          'Frame','t_ms','plane','planeMetricDeg',
+
+          'shoulder_L_x','shoulder_L_y','shoulder_R_x','shoulder_R_y',
+          'elbow_L_x','elbow_L_y','elbow_R_x','elbow_R_y',
+          'wrist_L_x','wrist_L_y','wrist_R_x','wrist_R_y',
+          'hip_L_x','hip_L_y','hip_R_x','hip_R_y',
+          'knee_L_x','knee_L_y','knee_R_x','knee_R_y',
+          'ankle_L_x','ankle_L_y','ankle_R_x','ankle_R_y',
+          'neck_x','neck_y',
+
+          'kneeAngle_R','kneeAngle_L',
+          'elbowAngle_R','elbowAngle_L',
+          'hipAngle_R','hipAngle_L',
+
+          'com_x','com_y',
+          'disp_m','speed_mps','acc_mps2',
+          'forceMag_N','moment_Nm','angMom_z',
+          'impulse_Ns','angImpulse_Nms'
+        ];
+        sheetData.push(header);
+
+        rec.data.forEach((f, frameIdx) => {
+          const j = f.joints || {};
+          const getXY = (obj) => obj ? [Number(obj.x.toFixed(2)), Number(obj.y.toFixed(2))] : ['N/A','N/A'];
+
+          const row = [
+            frameIdx, f.t_ms, f.plane, Number((f.planeMetricDeg ?? 0).toFixed(2)),
+
+            ...getXY(j.shoulder_L), ...getXY(j.shoulder_R),
+            ...getXY(j.elbow_L), ...getXY(j.elbow_R),
+            ...getXY(j.wrist_L), ...getXY(j.wrist_R),
+            ...getXY(j.hip_L), ...getXY(j.hip_R),
+            ...getXY(j.knee_L), ...getXY(j.knee_R),
+            ...getXY(j.ankle_L), ...getXY(j.ankle_R),
+            ...getXY(j.neck),
+
+            f.kneeAngle_R ?? 'N/A', f.kneeAngle_L ?? 'N/A',
+            f.elbowAngle_R ?? 'N/A', f.elbowAngle_L ?? 'N/A',
+            f.hipAngle_R ?? 'N/A', f.hipAngle_L ?? 'N/A',
+
+            f.comPx ? Number(f.comPx.x.toFixed(2)) : 'N/A',
+            f.comPx ? Number(f.comPx.y.toFixed(2)) : 'N/A',
+
+            Number((f.disp_m ?? 0).toFixed(4)),
+            Number((f.speed_mps ?? 0).toFixed(4)),
+            Number((f.acc_mps2 ?? 0).toFixed(4)),
+
+            Number((f.forceMag_N ?? 0).toFixed(3)),
+            Number((f.moment_Nm ?? 0).toFixed(3)),
+            Number((f.angMom_z ?? 0).toFixed(3)),
+
+            Number((f.impulse_Ns ?? 0).toFixed(4)),
+            Number((f.angImpulse_Nms ?? 0).toFixed(4))
+          ];
+
+          sheetData.push(row);
         });
-    </script>
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
+      XLSX.utils.book_append_sheet(wb, ws, participant.name.substring(0, 31));
+    });
+
+    XLSX.writeFile(wb, `sport_performance_data_${new Date().toISOString().split('T')[0]}.xlsx`);
+    showStatus('Exported XLSX ✅', 'success');
+  }
+
+  // ======= Boot =======
+  window.addEventListener('load', () => {
+    updateParticipantsList();
+    showStatus('Ready. Add participants, then Start Camera.', 'info');
+  });
+</script>
 </body>
 </html>
