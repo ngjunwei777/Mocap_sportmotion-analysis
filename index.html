@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Sport Performance Pose Estimation</title>
+  <title>Sport Performance Analyzer (iOS)</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0"></script>
@@ -15,364 +15,395 @@
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
-      padding: 20px;
+      padding: 16px;
     }
     .container {
       max-width: 1400px;
       margin: 0 auto;
-      background: white;
-      border-radius: 20px;
-      padding: 30px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      background: #fff;
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.25);
     }
-    h1 { text-align:center; color:#667eea; margin-bottom:10px; font-size:2.4em; }
-    .subtitle { text-align:center; color:#666; margin-bottom: 20px; font-size:1.05em; }
-    .row {
+    h1 { text-align:center; color:#667eea; margin-bottom:6px; font-size:2.1em; }
+    .subtitle { text-align:center; color:#666; margin-bottom:16px; font-size:1.02em; }
+
+    /* Layout: left scroll content + right sticky video panel */
+    .layout {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin: 18px 0;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 16px;
+      align-items: start;
     }
-    @media (max-width: 900px) { .row { grid-template-columns: 1fr; } }
+    @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
 
     .card {
       background: #f8f9fa;
-      border-radius: 12px;
-      padding: 18px;
+      border-radius: 14px;
+      padding: 14px;
     }
 
     .form-grid {
       display:grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 10px;
       margin-top: 10px;
     }
-    label { font-weight: 700; margin-bottom: 6px; color:#333; display:block; }
+    label { font-weight: 800; margin-bottom: 6px; color:#333; display:block; }
     input, select {
       width: 100%;
       padding: 10px;
       border: 2px solid #ddd;
-      border-radius: 8px;
+      border-radius: 10px;
       font-size: 14px;
     }
     input:focus, select:focus { outline:none; border-color:#667eea; }
 
     .btn {
-      padding: 12px 18px;
+      padding: 11px 14px;
       border: none;
-      border-radius: 10px;
-      font-size: 15px;
-      font-weight: 700;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 900;
       cursor: pointer;
-      transition: transform .15s, box-shadow .15s;
-      margin: 6px 6px 0 0;
+      margin: 8px 8px 0 0;
     }
-    .btn-primary { background:#667eea; color:white; }
-    .btn-success { background:#10b981; color:white; }
-    .btn-danger  { background:#ef4444; color:white; }
-    .btn:disabled { background:#cfcfcf; cursor:not-allowed; transform:none; box-shadow:none; }
+    .btn-primary { background:#667eea; color:#fff; }
+    .btn-success { background:#10b981; color:#fff; }
+    .btn-danger  { background:#ef4444; color:#fff; }
+    .btn:disabled { background:#cfcfcf; cursor:not-allowed; }
+
+    .status-message{
+      display:none;
+      text-align:center;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-weight: 900;
+      margin: 10px 0 14px 0;
+    }
+    .status-success { background:#d1fae5; color:#065f46; }
+    .status-error { background:#fee2e2; color:#991b1b; }
+    .status-info { background:#dbeafe; color:#1e40af; }
+
+    /* Sticky video panel */
+    .sticky {
+      position: sticky;
+      top: 10px;
+    }
+    @media (max-width: 980px) {
+      .sticky { position: sticky; top: 0; z-index: 50; }
+    }
 
     .video-wrap {
       position: relative;
       background:#000;
       border-radius: 14px;
       overflow:hidden;
-      min-height: 240px;
     }
-    video, canvas { width: 100%; height:auto; display:block; }
-    canvas { position:absolute; left:0; top:0; }
+    video {
+      width:100%;
+      height:auto;
+      display:block;
+      position: relative;
+      z-index: 1;
+      transform: translateZ(0);
+      -webkit-transform: translateZ(0);
+    }
+    canvas#overlay {
+      width:100%;
+      height:auto;
+      display:block;
+      position:absolute;
+      left:0; top:0;
+      z-index: 5;
+      pointer-events:none;
+    }
 
     .hud {
       position:absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(0,0,0,0.7);
-      color:white;
+      top: 10px; right: 10px;
+      z-index: 10;
+      background: rgba(0,0,0,0.72);
+      color:#fff;
       padding: 6px 10px;
       border-radius: 10px;
       font-size: 13px;
-      font-weight: 700;
+      font-weight: 900;
       display:flex;
-      gap: 10px;
+      gap:10px;
       align-items:center;
+      max-width: 95%;
     }
-    .hud small { font-weight:600; opacity:.9; }
+    .hud small { font-weight: 800; opacity: 0.9; }
 
-    .status-message {
-      text-align:center;
-      padding: 10px 12px;
-      border-radius: 10px;
-      font-weight: 800;
-      margin: 10px 0;
-      display:none;
-    }
-    .status-success { background:#d1fae5; color:#065f46; }
-    .status-error { background:#fee2e2; color:#991b1b; }
-    .status-info { background:#dbeafe; color:#1e40af; }
+    .divider { height: 1px; background:#e9e9e9; margin: 12px 0; }
 
-    .metrics-grid {
+    .toggle-grid{
       display:grid;
-      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 8px 12px;
       margin-top: 10px;
     }
-    .metric-card {
-      background:white;
+    .toggle{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      background:#fff;
       border-radius: 12px;
-      padding: 14px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-    }
-    .metric-title { color:#666; font-size:.92em; margin-bottom: 6px; }
-    .metric-value { color:#667eea; font-size: 1.6em; font-weight: 900; }
-    .metric-unit  { font-size:.72em; color:#999; margin-left: 6px; font-weight: 700; }
-
-    .toggle-grid {
-      display:grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 8px 14px;
-      margin-top: 10px;
-    }
-    .toggle {
-      display:flex;
-      align-items:center;
-      gap: 10px;
-      background: white;
-      border-radius: 10px;
       padding: 10px 12px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.06);
       user-select:none;
     }
-    .toggle input { width:auto; transform: scale(1.2); }
+    .toggle input{ width:auto; transform: scale(1.15); }
 
-    .participants-list { margin-top: 18px; }
-    .participant-item {
-      background: white;
-      padding: 14px;
-      border-radius: 12px;
+    .metrics-grid{
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .metric{
+      background:#fff;
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    .metric .t{ color:#666; font-weight:800; font-size: .92em; margin-bottom: 6px; }
+    .metric .v{ color:#667eea; font-weight: 1000; font-size: 1.55em; }
+    .unit{ color:#999; font-weight: 900; font-size: .75em; margin-left: 6px; }
+
+    /* Charts */
+    .charts-grid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .chart-card{
+      background:#fff;
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    .chart-title{
+      display:flex;
+      justify-content: space-between;
+      align-items:center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .chart-title b{ color:#333; }
+    .chart-title span{ color:#666; font-weight: 800; font-size: .9em; }
+    canvas.chart{
+      width: 100%;
+      height: 140px; /* CSS height; actual pixels set in JS for sharpness */
+      display:block;
+      border-radius: 10px;
+      background: #fafafa;
+    }
+
+    .participants-list .item{
+      background:#fff;
+      border-radius: 14px;
+      padding: 12px;
       margin-top: 10px;
       display:flex;
       justify-content: space-between;
       gap: 12px;
       align-items:center;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
     }
-    .participant-info { flex:1; }
-    .hint {
-      margin-top: 10px;
-      font-size: 0.92em;
-      color:#555;
-      line-height: 1.35;
-    }
-    .hint b { color:#333; }
-    .mini {
-      font-size: 0.86em;
-      color:#666;
-      margin-top: 8px;
-    }
-    .divider { height: 1px; background:#e9e9e9; margin: 14px 0; }
 
+    .mini { color:#666; font-size: .88em; line-height: 1.35; margin-top: 8px; }
   </style>
 </head>
 
 <body>
   <div class="container">
     <h1>🏃‍♂️ Sport Performance Analyzer</h1>
-    <p class="subtitle">High-Speed Motion Capture & Pose-Based Biomechanics (iOS-compatible)</p>
+    <p class="subtitle">Sticky video + pose overlay + angles + real-time kinetics charts (iOS Safari friendly)</p>
 
     <div id="statusMessage" class="status-message"></div>
 
-    <div class="row">
-      <div class="card">
-        <h3>Participant Information</h3>
-        <div class="form-grid">
-          <div>
-            <label for="participantName">Name *</label>
-            <input id="participantName" placeholder="Enter name" />
+    <div class="layout">
+      <!-- LEFT: Scrollable content -->
+      <div>
+        <div class="card">
+          <h3>Participant</h3>
+          <div class="form-grid">
+            <div>
+              <label for="participantName">Name *</label>
+              <input id="participantName" placeholder="Enter name">
+            </div>
+            <div>
+              <label for="participantSex">Sex *</label>
+              <select id="participantSex">
+                <option value="">Select</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label for="participantAge">Age *</label>
+              <input id="participantAge" type="number" min="5" max="120" placeholder="Age">
+            </div>
+            <div>
+              <label for="participantMass">Mass (kg) *</label>
+              <input id="participantMass" type="number" min="20" max="300" step="0.1" placeholder="kg">
+            </div>
+            <div>
+              <label for="participantHeight">Height (cm) *</label>
+              <input id="participantHeight" type="number" min="50" max="250" step="0.1" placeholder="cm">
+            </div>
           </div>
-          <div>
-            <label for="participantSex">Sex *</label>
-            <select id="participantSex">
-              <option value="">Select</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label for="participantAge">Age (years) *</label>
-            <input id="participantAge" type="number" min="5" max="120" placeholder="Age" />
-          </div>
-          <div>
-            <label for="participantMass">Mass (kg) *</label>
-            <input id="participantMass" type="number" min="20" max="300" step="0.1" placeholder="Weight" />
-          </div>
-          <div>
-            <label for="participantHeight">Height (cm) *</label>
-            <input id="participantHeight" type="number" min="50" max="250" step="0.1" placeholder="Height" />
-          </div>
-        </div>
-        <button class="btn btn-success" onclick="addParticipant()">Add Participant</button>
+          <button class="btn btn-success" onclick="addParticipant()">Add Participant</button>
 
-        <div class="divider"></div>
+          <div class="divider"></div>
 
-        <h3>Select Participant for Recording</h3>
-        <label for="selectedParticipant" class="mini">Choose who you’re recording (used for mass/height scaling).</label>
-        <select id="selectedParticipant"></select>
+          <label for="selectedParticipant">Select Participant for Recording</label>
+          <select id="selectedParticipant"></select>
 
-        <div class="form-grid" style="margin-top:10px;">
-          <div>
-            <label for="fpsSelection">Requested FPS</label>
-            <select id="fpsSelection">
-              <option value="30">30 FPS</option>
-              <option value="60">60 FPS</option>
-              <option value="120">120 FPS</option>
-              <option value="240">240 FPS</option>
-            </select>
+          <div class="form-grid">
+            <div>
+              <label for="fpsSelection">Requested FPS</label>
+              <select id="fpsSelection">
+                <option value="30">30 FPS</option>
+                <option value="60">60 FPS</option>
+                <option value="120">120 FPS</option>
+                <option value="240">240 FPS</option>
+              </select>
+            </div>
+            <div>
+              <label for="cameraFacing">Camera</label>
+              <select id="cameraFacing">
+                <option value="environment">Back</option>
+                <option value="user">Front</option>
+              </select>
+            </div>
+            <div>
+              <label for="planeSelection">Plane</label>
+              <select id="planeSelection">
+                <option value="sagittal">Sagittal</option>
+                <option value="frontal">Frontal</option>
+                <option value="transverse">Transverse (2D proxy)</option>
+              </select>
+            </div>
+            <div>
+              <label for="windowSeconds">Chart Window</label>
+              <select id="windowSeconds">
+                <option value="5">5s</option>
+                <option value="10" selected>10s</option>
+                <option value="15">15s</option>
+                <option value="20">20s</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <label for="cameraFacing">Camera</label>
-            <select id="cameraFacing">
-              <option value="environment">Back camera</option>
-              <option value="user">Front camera</option>
-            </select>
-          </div>
-          <div>
-            <label for="planeSelection">Plane (single-camera = 2D)</label>
-            <select id="planeSelection">
-              <option value="sagittal">Sagittal</option>
-              <option value="frontal">Frontal</option>
-              <option value="transverse">Transverse (2D proxy)</option>
-            </select>
-          </div>
-        </div>
 
-        <div class="hint">
-          <b>iOS note:</b> Safari may downgrade FPS even if you request 120/240. We’ll show the negotiated FPS in the HUD.
-          Also ensure <b>HTTPS</b> and allow camera permissions.
-        </div>
-
-        <div style="margin-top:10px;">
           <button class="btn btn-primary" onclick="startCamera()">Start Camera</button>
           <button class="btn btn-primary" onclick="stopCamera()">Stop Camera</button>
-        </div>
-        <div style="margin-top:8px;">
-          <button class="btn btn-success" onclick="startRecording()" id="recordBtn" disabled>Start Recording</button>
-          <button class="btn btn-danger" onclick="stopRecording()" id="stopBtn" disabled>Stop Recording</button>
-        </div>
-      </div>
+          <button class="btn btn-success" id="recordBtn" onclick="startRecording()" disabled>Start Recording</button>
+          <button class="btn btn-danger" id="stopBtn" onclick="stopRecording()" disabled>Stop Recording</button>
 
-      <div class="card">
-        <h3>Live Video + Pose Overlay</h3>
-        <div class="video-wrap">
-          <video id="video" playsinline muted></video>
-          <canvas id="canvas"></canvas>
-          <div class="hud">
-            <span id="fpsIndicator">FPS: 0</span>
-            <small id="negotiatedInfo">w×h • req 0</small>
+          <div class="mini">
+            iOS note: FPS may be negotiated down. Overlay is drawn on a canvas above the video (z-index fixed).
           </div>
         </div>
 
-        <div class="divider"></div>
-
-        <h3>Overlay / Display Toggles</h3>
-        <div class="toggle-grid">
-          <div class="toggle"><input type="checkbox" id="optSkeleton" checked /> <label for="optSkeleton">Skeleton (stick figure)</label></div>
-          <div class="toggle"><input type="checkbox" id="optJoints" checked /> <label for="optJoints">Joints (dots)</label></div>
-          <div class="toggle"><input type="checkbox" id="optLabels" checked /> <label for="optLabels">Joint labels</label></div>
-          <div class="toggle"><input type="checkbox" id="optAngleLabels" checked /> <label for="optAngleLabels">Live angle labels</label></div>
-          <div class="toggle"><input type="checkbox" id="optCOM" checked /> <label for="optCOM">Center of Mass (COM)</label></div>
-          <div class="toggle"><input type="checkbox" id="optVelAcc" /> <label for="optVelAcc">Velocity/Acceleration arrows</label></div>
-          <div class="toggle"><input type="checkbox" id="optForce" /> <label for="optForce">Linear force (m·a)</label></div>
-          <div class="toggle"><input type="checkbox" id="optMoment" /> <label for="optMoment">Moment about COM</label></div>
-          <div class="toggle"><input type="checkbox" id="optAngMom" /> <label for="optAngMom">Angular momentum</label></div>
-          <div class="toggle"><input type="checkbox" id="optImpulse" checked /> <label for="optImpulse">Impulse + Angular impulse</label></div>
+        <div class="card" style="margin-top: 12px;">
+          <h3>Overlay Controls</h3>
+          <div class="toggle-grid">
+            <div class="toggle"><input type="checkbox" id="optSkeleton" checked><label for="optSkeleton">Stick figure</label></div>
+            <div class="toggle"><input type="checkbox" id="optJoints" checked><label for="optJoints">Joint dots</label></div>
+            <div class="toggle"><input type="checkbox" id="optLabels" checked><label for="optLabels">Joint labels</label></div>
+            <div class="toggle"><input type="checkbox" id="optAngleLabels" checked><label for="optAngleLabels">Live angle labels</label></div>
+            <div class="toggle"><input type="checkbox" id="optCOM" checked><label for="optCOM">COM</label></div>
+          </div>
         </div>
 
-        <div class="mini">
-          Kinetics here are <b>pose-based estimates</b> from 2D video (no force plate). Use as trend indicators.
+        <div class="card" style="margin-top: 12px;">
+          <h3>Angles (Real-time)</h3>
+          <div class="metrics-grid">
+            <div class="metric"><div class="t">Shoulder Angle (R / L)</div><div class="v" id="shoulderAngles">0 / 0<span class="unit">°</span></div></div>
+            <div class="metric"><div class="t">Elbow Angle (R / L)</div><div class="v" id="elbowAngles">0 / 0<span class="unit">°</span></div></div>
+            <div class="metric"><div class="t">Wrist Angle (R / L)</div><div class="v" id="wristAngles">0 / 0<span class="unit">°</span></div></div>
+            <div class="metric"><div class="t">Hip Angle (R / L)</div><div class="v" id="hipAngles">0 / 0<span class="unit">°</span></div></div>
+            <div class="metric"><div class="t">Knee Angle (R / L)</div><div class="v" id="kneeAngles">0 / 0<span class="unit">°</span></div></div>
+            <div class="metric"><div class="t">Ankle Angle (R / L)</div><div class="v" id="ankleAngles">0 / 0<span class="unit">°</span></div></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: 12px;">
+          <h3>Kinetics Charts (Real-time)</h3>
+          <div class="charts-grid">
+            <div class="chart-card">
+              <div class="chart-title"><b>Force |F| (N)</b><span id="lblForce">0.0 N</span></div>
+              <canvas id="chartForce" class="chart"></canvas>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title"><b>Moment τz (N·m)</b><span id="lblMoment">0.00 N·m</span></div>
+              <canvas id="chartMoment" class="chart"></canvas>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title"><b>Impulse ∫|F|dt (N·s)</b><span id="lblImpulse">0.00 N·s</span></div>
+              <canvas id="chartImpulse" class="chart"></canvas>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title"><b>Angular Impulse ∫τdt (N·m·s)</b><span id="lblAngImpulse">0.00 N·m·s</span></div>
+              <canvas id="chartAngImpulse" class="chart"></canvas>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title"><b>Angular Momentum Lz (kg·m²/s)</b><span id="lblAngMom">0.00</span></div>
+              <canvas id="chartAngMom" class="chart"></canvas>
+            </div>
+          </div>
+
+          <div class="mini">
+            Charts show a rolling window (5–20s). Values are pose-based estimates (2D).
+          </div>
+        </div>
+
+        <div class="card participants-list" style="margin-top: 12px;">
+          <h3>Participants (<span id="participantCount">0</span>/10)</h3>
+          <div id="participantsList"></div>
+          <button class="btn btn-primary" onclick="downloadData()">📊 Download All Data (XLSX)</button>
+        </div>
+      </div>
+
+      <!-- RIGHT: Sticky video -->
+      <div class="sticky">
+        <div class="card">
+          <h3>Sticky Video (Always Visible)</h3>
+          <div class="video-wrap">
+            <video id="video" playsinline muted></video>
+            <canvas id="overlay"></canvas>
+            <div class="hud">
+              <span id="fpsIndicator">FPS: 0</span>
+              <small id="negotiatedInfo">—</small>
+            </div>
+          </div>
+          <div class="mini">
+            If overlay disappears: ensure “Stick figure” is ON and iOS permission is granted.
+          </div>
         </div>
       </div>
     </div>
-
-    <div class="card">
-      <h3>Real-Time Biomechanics</h3>
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <div class="metric-title">Linear Displacement (COM)</div>
-          <div class="metric-value" id="displacement">0.000<span class="metric-unit"> m</span></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">Linear Velocity (COM)</div>
-          <div class="metric-value" id="velocity">0.000<span class="metric-unit"> m/s</span></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">Linear Acceleration (COM)</div>
-          <div class="metric-value" id="acceleration">0.000<span class="metric-unit"> m/s²</span></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">Force Estimate (m·a)</div>
-          <div class="metric-value" id="forceEst">0.0<span class="metric-unit"> N</span></div>
-        </div>
-
-        <div class="metric-card">
-          <div class="metric-title">Impulse (∫|F|dt)</div>
-          <div class="metric-value" id="impulseEst">0.0<span class="metric-unit"> N·s</span></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">Angular Impulse (∫τdt)</div>
-          <div class="metric-value" id="angImpulseEst">0.0<span class="metric-unit"> N·m·s</span></div>
-        </div>
-
-        <div class="metric-card">
-          <div class="metric-title">Knee Angle (R / L)</div>
-          <div class="metric-value" id="kneeAngles">0 / 0<span class="metric-unit">°</span></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">Elbow Angle (R / L)</div>
-          <div class="metric-value" id="elbowAngles">0 / 0<span class="metric-unit">°</span></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">Hip Angle (R / L)</div>
-          <div class="metric-value" id="hipAngles">0 / 0<span class="metric-unit">°</span></div>
-        </div>
-
-        <div class="metric-card">
-          <div class="metric-title">Moment about COM (2D z)</div>
-          <div class="metric-value" id="momentEst">0.0<span class="metric-unit"> N·m</span></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-title">Angular Momentum about COM (2D z)</div>
-          <div class="metric-value" id="angMomEst">0.0<span class="metric-unit"> kg·m²/s</span></div>
-        </div>
-
-        <div class="metric-card">
-          <div class="metric-title" id="planeMetricTitle">Plane Metric</div>
-          <div class="metric-value" id="planeMetricValue">0.0<span class="metric-unit">°</span></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card participants-list">
-      <h3>Participants (<span id="participantCount">0</span>/10)</h3>
-      <div id="participantsList"></div>
-      <button class="btn btn-primary" onclick="downloadData()" style="margin-top: 14px;">📊 Download All Data (XLSX)</button>
-    </div>
-
   </div>
 
 <script>
-  // ======= Globals =======
+  // ======================
+  // iOS Safari-safe Pose + Sticky overlay + Charts
+  // ======================
+
   let detector = null;
   let video = null;
-  let canvas = null;
-  let ctx = null;
-
+  let overlay = null;
+  let octx = null;
   let animationId = null;
   let streamRef = null;
 
   let isRecording = false;
   let recordingData = [];
-
   let participants = [];
   let currentParticipant = null;
 
@@ -380,16 +411,16 @@
   let frameCount = 0;
   let lastFPSUpdate = Date.now();
 
-  // Kinematics state (COM)
-  let prevState = null; // { t, com_m: {x,y}, v_mps: {x,y} }
-  let reqFps = 30;
+  // Kinematics state
+  let prevState = null;     // { t, com_m, v_mps }
+  let prevKpMap = null;
+  let prevKpTime = null;
 
-  // Impulse accumulators (live session)
+  // Impulse accumulators (for current recording session)
   let impulse_Ns = 0;
   let angImpulse_Nms = 0;
   let lastImpulseT = null;
 
-  // MoveNet keypoint indices
   const KP = {
     nose: 0,
     left_eye: 1, right_eye: 2,
@@ -423,7 +454,24 @@
     [KP.knee_R, KP.ankle_R],
   ];
 
-  // ======= Utilities =======
+  // ---------- Chart buffers ----------
+  const chartSeries = {
+    force: [],
+    moment: [],
+    impulse: [],
+    angImpulse: [],
+    angMom: []
+  };
+
+  const charts = {
+    force: { canvasId: "chartForce", labelId: "lblForce", unit: "N" },
+    moment:{ canvasId: "chartMoment", labelId: "lblMoment", unit: "N·m" },
+    impulse:{ canvasId: "chartImpulse", labelId: "lblImpulse", unit: "N·s" },
+    angImpulse:{ canvasId: "chartAngImpulse", labelId: "lblAngImpulse", unit: "N·m·s" },
+    angMom:{ canvasId: "chartAngMom", labelId: "lblAngMom", unit: "" }
+  };
+
+  // ---------- Utils ----------
   function showStatus(message, type) {
     const el = document.getElementById('statusMessage');
     el.className = `status-message status-${type}`;
@@ -436,35 +484,23 @@
     return kp && typeof kp.score === "number" && kp.score >= thr;
   }
 
-  function midpoint(a, b) {
-    return { x: (a.x + b.x)/2, y: (a.y + b.y)/2, score: Math.min(a.score ?? 0, b.score ?? 0) };
+  function midpoint(a,b) {
+    return { x:(a.x+b.x)/2, y:(a.y+b.y)/2, score: Math.min(a.score??0, b.score??0) };
   }
 
-  function calcAngle(p1, p2, p3) {
-    const rad = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
-    let ang = Math.abs(rad * 180 / Math.PI);
-    if (ang > 180) ang = 360 - ang;
+  function calcAngle(p1,p2,p3) {
+    const rad = Math.atan2(p3.y-p2.y, p3.x-p2.x) - Math.atan2(p1.y-p2.y, p1.x-p2.x);
+    let ang = Math.abs(rad*180/Math.PI);
+    if (ang>180) ang = 360-ang;
     return ang;
   }
 
-  function pxToMetersScale() {
-    const h_m = currentParticipant ? (currentParticipant.height / 100) : 1.70;
-    const px = canvas ? canvas.height : 720;
-    return h_m / px;
-  }
-
-  function vecSub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
-  function vecAdd(a,b){ return {x:a.x+b.x, y:a.y+b.y}; }
-  function vecMul(a,s){ return {x:a.x*s, y:a.y*s}; }
-  function vecLen(a){ return Math.sqrt(a.x*a.x + a.y*a.y); }
-  function crossZ(a,b){ return a.x*b.y - a.y*b.x; } // 2D z-component
-
   function drawText(text, x, y) {
-    ctx.font = '14px Segoe UI, Arial';
-    ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillText(text, x+1, y+1);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(text, x, y);
+    octx.font = '14px Segoe UI, Arial';
+    octx.fillStyle = 'rgba(0,0,0,0.65)';
+    octx.fillText(text, x+1, y+1);
+    octx.fillStyle = '#ffffff';
+    octx.fillText(text, x, y);
   }
 
   function getOpts() {
@@ -474,505 +510,28 @@
       labels: document.getElementById('optLabels').checked,
       angleLabels: document.getElementById('optAngleLabels').checked,
       com: document.getElementById('optCOM').checked,
-      velAcc: document.getElementById('optVelAcc').checked,
-      force: document.getElementById('optForce').checked,
-      moment: document.getElementById('optMoment').checked,
-      angMom: document.getElementById('optAngMom').checked,
-      impulse: document.getElementById('optImpulse').checked,
       plane: document.getElementById('planeSelection').value
     };
   }
 
-  function drawVector(originPx, vecPx, label) {
-    const tip = vecAdd(originPx, vecPx);
+  function vecSub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
+  function vecMul(a,s){ return {x:a.x*s, y:a.y*s}; }
+  function vecLen(a){ return Math.sqrt(a.x*a.x + a.y*a.y); }
+  function crossZ(a,b){ return a.x*b.y - a.y*b.x; }
 
-    ctx.strokeStyle = 'rgba(0, 160, 255, 0.9)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(originPx.x, originPx.y);
-    ctx.lineTo(tip.x, tip.y);
-    ctx.stroke();
-
-    const angle = Math.atan2(vecPx.y, vecPx.x);
-    const headLen = 10;
-    ctx.beginPath();
-    ctx.moveTo(tip.x, tip.y);
-    ctx.lineTo(tip.x - headLen * Math.cos(angle - Math.PI/6), tip.y - headLen * Math.sin(angle - Math.PI/6));
-    ctx.lineTo(tip.x - headLen * Math.cos(angle + Math.PI/6), tip.y - headLen * Math.sin(angle + Math.PI/6));
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(0, 160, 255, 0.9)';
-    ctx.fill();
-
-    if (label) drawText(label, tip.x + 6, tip.y + 6);
+  function pxToMetersScale() {
+    const h_m = currentParticipant ? (currentParticipant.height / 100) : 1.70;
+    const px = overlay ? overlay.height : 720;
+    return h_m / px;
   }
 
-  // ======= Pose Detection Init =======
-  async function initializePoseDetection() {
-    const model = window.poseDetection.SupportedModels.MoveNet;
-    detector = await window.poseDetection.createDetector(model, {
-      modelType: window.poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
-    });
-  }
-
-  // ======= iOS-Friendly Camera Start =======
-  async function startCamera() {
-    try {
-      video = document.getElementById('video');
-      canvas = document.getElementById('canvas');
-      ctx = canvas.getContext('2d');
-
-      reqFps = parseInt(document.getElementById('fpsSelection').value, 10);
-      const facingMode = document.getElementById('cameraFacing').value;
-
-      video.setAttribute('playsinline', '');
-      video.muted = true;
-      video.autoplay = true;
-
-      showStatus('Requesting camera permission...', 'info');
-
-      const baseConstraints = {
-        audio: false,
-        video: {
-          facingMode: { ideal: facingMode },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(baseConstraints);
-      streamRef = stream;
-      video.srcObject = stream;
-
-      await new Promise((res) => { video.onloadedmetadata = () => res(); });
-
-      const track = stream.getVideoTracks()[0];
-      if (track && track.applyConstraints) {
-        try {
-          await track.applyConstraints({
-            frameRate: { ideal: reqFps, max: reqFps },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          });
-        } catch (e) { /* iOS may ignore fps */ }
-      }
-
-      await video.play();
-
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
-
-      const track2 = stream.getVideoTracks()[0];
-      const settings = track2 && track2.getSettings ? track2.getSettings() : {};
-      const w = settings.width || video.videoWidth || 0;
-      const h = settings.height || video.videoHeight || 0;
-      const fr = settings.frameRate || 0;
-      document.getElementById('negotiatedInfo').textContent = `${w}×${h} • req ${reqFps}fps • got ${fr || "?"}fps`;
-
-      if (!detector) {
-        showStatus('Loading pose model...', 'info');
-        await initializePoseDetection();
-        showStatus('Pose model ready ✅', 'success');
-      } else {
-        showStatus('Camera started ✅', 'success');
-      }
-
-      document.getElementById('recordBtn').disabled = false;
-
-      // Reset session accumulators
-      prevState = null;
-      impulse_Ns = 0;
-      angImpulse_Nms = 0;
-      lastImpulseT = null;
-
-      if (animationId) cancelAnimationFrame(animationId);
-      detectPose();
-
-    } catch (err) {
-      showStatus('Error accessing camera: ' + (err.message || err), 'error');
-      console.error(err);
+  function resizeOverlayToVideo() {
+    const vw = video.videoWidth || 0;
+    const vh = video.videoHeight || 0;
+    if (vw && vh) {
+      if (overlay.width !== vw) overlay.width = vw;
+      if (overlay.height !== vh) overlay.height = vh;
     }
-  }
-
-  function stopCamera() {
-    try {
-      if (animationId) cancelAnimationFrame(animationId);
-      animationId = null;
-
-      if (video) {
-        video.pause();
-        video.srcObject = null;
-      }
-
-      if (streamRef) {
-        streamRef.getTracks().forEach(t => t.stop());
-        streamRef = null;
-      }
-
-      document.getElementById('recordBtn').disabled = true;
-      document.getElementById('stopBtn').disabled = true;
-
-      isRecording = false;
-      recordingData = [];
-      currentParticipant = null;
-
-      showStatus('Camera stopped.', 'info');
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  // ======= Main Loop =======
-  async function detectPose() {
-    if (!video || video.readyState < 2 || !detector) {
-      animationId = requestAnimationFrame(detectPose);
-      return;
-    }
-
-    const poses = await detector.estimatePoses(video);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    if (poses && poses.length > 0) {
-      const pose = poses[0];
-      const keypoints = pose.keypoints;
-      const opts = getOpts();
-
-      // neck as mid-shoulders
-      const shL = keypoints[KP.shoulder_L];
-      const shR = keypoints[KP.shoulder_R];
-      const neck = (clampScore(shL) && clampScore(shR)) ? midpoint(shL, shR) : null;
-
-      drawOverlay(keypoints, neck, opts);
-
-      const frameMetrics = calculateMetrics(keypoints, neck, opts);
-
-      if (isRecording && currentParticipant) {
-        recordFrame(keypoints, neck, frameMetrics);
-      }
-    }
-
-    updateFPS();
-    animationId = requestAnimationFrame(detectPose);
-  }
-
-  // ======= Drawing =======
-  function drawOverlay(keypoints, neck, opts) {
-    // Skeleton
-    if (opts.skeleton) {
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)';
-      for (const [i,j] of SKELETON) {
-        const a = keypoints[i], b = keypoints[j];
-        if (clampScore(a) && clampScore(b)) {
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.stroke();
-        }
-      }
-      // neck->pelvis line
-      if (neck) {
-        const hipL = keypoints[KP.hip_L], hipR = keypoints[KP.hip_R];
-        if (clampScore(hipL) && clampScore(hipR)) {
-          const pelvis = midpoint(hipL, hipR);
-          ctx.strokeStyle = 'rgba(255, 120, 0, 0.9)';
-          ctx.beginPath();
-          ctx.moveTo(neck.x, neck.y);
-          ctx.lineTo(pelvis.x, pelvis.y);
-          ctx.stroke();
-        }
-      }
-    }
-
-    // Joints + labels
-    if (opts.joints) {
-      for (let i=0; i<keypoints.length; i++) {
-        const kp = keypoints[i];
-        if (clampScore(kp)) {
-          ctx.beginPath();
-          ctx.arc(kp.x, kp.y, 5, 0, 2*Math.PI);
-          ctx.fillStyle = 'rgba(0, 255, 0, 0.95)';
-          ctx.fill();
-
-          if (opts.labels) drawText(JOINT_LABELS[i], kp.x + 8, kp.y - 8);
-        }
-      }
-
-      if (neck) {
-        ctx.beginPath();
-        ctx.arc(neck.x, neck.y, 6, 0, 2*Math.PI);
-        ctx.fillStyle = 'rgba(0, 200, 255, 0.95)';
-        ctx.fill();
-        if (opts.labels) drawText('neck', neck.x + 8, neck.y - 8);
-      }
-    }
-  }
-
-  // ======= Metrics =======
-  function calculateMetrics(keypoints, neck, opts) {
-    const hipR = keypoints[KP.hip_R], kneeR = keypoints[KP.knee_R], ankleR = keypoints[KP.ankle_R];
-    const shR  = keypoints[KP.shoulder_R], elbowR = keypoints[KP.elbow_R], wristR = keypoints[KP.wrist_R];
-
-    const hipL = keypoints[KP.hip_L], kneeL = keypoints[KP.knee_L], ankleL = keypoints[KP.ankle_L];
-    const shL  = keypoints[KP.shoulder_L], elbowL = keypoints[KP.elbow_L], wristL = keypoints[KP.wrist_L];
-
-    // Angles
-    let kneeAngR=null, kneeAngL=null, elbowAngR=null, elbowAngL=null, hipAngR=null, hipAngL=null;
-
-    if (clampScore(hipR) && clampScore(kneeR) && clampScore(ankleR)) kneeAngR = calcAngle(hipR, kneeR, ankleR);
-    if (clampScore(hipL) && clampScore(kneeL) && clampScore(ankleL)) kneeAngL = calcAngle(hipL, kneeL, ankleL);
-
-    if (clampScore(shR) && clampScore(elbowR) && clampScore(wristR)) elbowAngR = calcAngle(shR, elbowR, wristR);
-    if (clampScore(shL) && clampScore(elbowL) && clampScore(wristL)) elbowAngL = calcAngle(shL, elbowL, wristL);
-
-    if (clampScore(shR) && clampScore(hipR) && clampScore(kneeR)) hipAngR = calcAngle(shR, hipR, kneeR);
-    if (clampScore(shL) && clampScore(hipL) && clampScore(kneeL)) hipAngL = calcAngle(shL, hipL, kneeL);
-
-    // UI angle summaries
-    document.getElementById('kneeAngles').innerHTML =
-      `${kneeAngR ? Math.round(kneeAngR) : 0} / ${kneeAngL ? Math.round(kneeAngL) : 0}<span class="metric-unit">°</span>`;
-    document.getElementById('elbowAngles').innerHTML =
-      `${elbowAngR ? Math.round(elbowAngR) : 0} / ${elbowAngL ? Math.round(elbowAngL) : 0}<span class="metric-unit">°</span>`;
-    document.getElementById('hipAngles').innerHTML =
-      `${hipAngR ? Math.round(hipAngR) : 0} / ${hipAngL ? Math.round(hipAngL) : 0}<span class="metric-unit">°</span>`;
-
-    // Live angle labels (overlay near joints)
-    if (opts.angleLabels) {
-      if (kneeAngR && clampScore(kneeR)) drawText(`Knee R ${Math.round(kneeAngR)}°`, kneeR.x + 10, kneeR.y + 18);
-      if (kneeAngL && clampScore(kneeL)) drawText(`Knee L ${Math.round(kneeAngL)}°`, kneeL.x + 10, kneeL.y + 18);
-
-      if (elbowAngR && clampScore(elbowR)) drawText(`Elbow R ${Math.round(elbowAngR)}°`, elbowR.x + 10, elbowR.y + 18);
-      if (elbowAngL && clampScore(elbowL)) drawText(`Elbow L ${Math.round(elbowAngL)}°`, elbowL.x + 10, elbowL.y + 18);
-
-      if (hipAngR && clampScore(hipR)) drawText(`Hip R ${Math.round(hipAngR)}°`, hipR.x + 10, hipR.y + 18);
-      if (hipAngL && clampScore(hipL)) drawText(`Hip L ${Math.round(hipAngL)}°`, hipL.x + 10, hipL.y + 18);
-    }
-
-    // COM estimate
-    let comPx = null;
-    const okSh = clampScore(shL) && clampScore(shR);
-    const okHp = clampScore(hipL) && clampScore(hipR);
-
-    let shMid=null, hpMid=null;
-    if (okSh) shMid = midpoint(shL, shR);
-    if (okHp) hpMid = midpoint(hipL, hipR);
-
-    if (okSh && okHp) {
-      comPx = { x: (shMid.x*0.4 + hpMid.x*0.6), y: (shMid.y*0.4 + hpMid.y*0.6) };
-    } else if (okHp) {
-      comPx = { x: hpMid.x, y: hpMid.y };
-    } else if (clampScore(hipR)) {
-      comPx = { x: hipR.x, y: hipR.y };
-    }
-
-    // Draw COM
-    if (opts.com && comPx) {
-      ctx.beginPath();
-      ctx.arc(comPx.x, comPx.y, 7, 0, 2*Math.PI);
-      ctx.fillStyle = 'rgba(255, 255, 0, 0.95)';
-      ctx.fill();
-      drawText('COM', comPx.x + 8, comPx.y - 8);
-    }
-
-    // Kinematics (meters)
-    const t = performance.now() / 1000;
-    const s = pxToMetersScale();
-
-    let displacement_m = 0, speed_mps = 0, acc_mps2_mag = 0;
-    let v_mps = {x:0,y:0};
-    let a_mps2 = {x:0,y:0};
-
-    if (comPx) {
-      const com_m = { x: comPx.x * s, y: comPx.y * s };
-
-      if (prevState) {
-        const dt = t - prevState.t;
-        if (dt > 0.0001) {
-          const d = vecSub(com_m, prevState.com_m);
-          displacement_m = vecLen(d);
-          v_mps = vecMul(d, 1/dt);
-          speed_mps = vecLen(v_mps);
-
-          const dv = vecSub(v_mps, prevState.v_mps);
-          a_mps2 = vecMul(dv, 1/dt);
-          acc_mps2_mag = vecLen(a_mps2);
-        }
-      }
-
-      prevState = { t, com_m, v_mps };
-    } else {
-      prevState = null;
-    }
-
-    document.getElementById('displacement').innerHTML =
-      `${displacement_m.toFixed(3)}<span class="metric-unit"> m</span>`;
-    document.getElementById('velocity').innerHTML =
-      `${speed_mps.toFixed(3)}<span class="metric-unit"> m/s</span>`;
-    document.getElementById('acceleration').innerHTML =
-      `${acc_mps2_mag.toFixed(3)}<span class="metric-unit"> m/s²</span>`;
-
-    // Force estimate
-    const mass = currentParticipant ? currentParticipant.mass : 70;
-    const Fvec_N = { x: mass * a_mps2.x, y: mass * a_mps2.y };
-    const Fmag_N = vecLen(Fvec_N);
-
-    document.getElementById('forceEst').innerHTML =
-      `${Fmag_N.toFixed(1)}<span class="metric-unit"> N</span>`;
-
-    // Moment about COM (tau_z = r x F)
-    let tau_Nm = 0;
-    if (comPx && okHp) {
-      const pelvisPx = hpMid;
-      const r_m = { x: (pelvisPx.x - comPx.x) * s, y: (pelvisPx.y - comPx.y) * s };
-      tau_Nm = crossZ(r_m, Fvec_N);
-    }
-    document.getElementById('momentEst').innerHTML =
-      `${tau_Nm.toFixed(2)}<span class="metric-unit"> N·m</span>`;
-
-    // Angular momentum about COM (2D z) using lumped points
-    let Lz = 0;
-    if (comPx && prevState) {
-      const com_m = prevState.com_m;
-
-      const lumps = [
-        { name:'shoulder_L', kp: shL, m: mass*0.10 },
-        { name:'shoulder_R', kp: shR, m: mass*0.10 },
-        { name:'hip_L', kp: hipL, m: mass*0.20 },
-        { name:'hip_R', kp: hipR, m: mass*0.20 },
-        { name:'knee_L', kp: kneeL, m: mass*0.10 },
-        { name:'knee_R', kp: kneeR, m: mass*0.10 },
-        { name:'ankle_L', kp: ankleL, m: mass*0.05 },
-        { name:'ankle_R', kp: ankleR, m: mass*0.05 },
-        { name:'wrist_L', kp: wristL, m: mass*0.05 },
-        { name:'wrist_R', kp: wristR, m: mass*0.05 },
-      ];
-
-      if (!window._prevKpMap) window._prevKpMap = null;
-      if (!window._prevKpTime) window._prevKpTime = null;
-
-      if (window._prevKpMap && window._prevKpTime) {
-        const dt = t - window._prevKpTime;
-        if (dt > 0.0001) {
-          for (const L of lumps) {
-            if (!clampScore(L.kp)) continue;
-            const prev = window._prevKpMap[L.name];
-            if (!prev) continue;
-
-            const pos_m = { x: L.kp.x * s, y: L.kp.y * s };
-            const prev_m = { x: prev.x * s, y: prev.y * s };
-            const v_i = vecMul(vecSub(pos_m, prev_m), 1/dt);
-            const r_i = vecSub(pos_m, com_m);
-
-            Lz += L.m * crossZ(r_i, v_i);
-          }
-        }
-      }
-
-      const map = {};
-      map['shoulder_L'] = shL; map['shoulder_R'] = shR;
-      map['hip_L'] = hipL; map['hip_R'] = hipR;
-      map['knee_L'] = kneeL; map['knee_R'] = kneeR;
-      map['ankle_L'] = ankleL; map['ankle_R'] = ankleR;
-      map['wrist_L'] = wristL; map['wrist_R'] = wristR;
-      window._prevKpMap = map;
-      window._prevKpTime = t;
-    }
-    document.getElementById('angMomEst').innerHTML =
-      `${Lz.toFixed(2)}<span class="metric-unit"> kg·m²/s</span>`;
-
-    // Impulse + Angular impulse (live integration)
-    if (opts.impulse) {
-      if (lastImpulseT != null) {
-        const dt = t - lastImpulseT;
-        if (dt > 0.0001 && dt < 0.2) { // guard for big jumps
-          impulse_Ns += Fmag_N * dt;
-          angImpulse_Nms += tau_Nm * dt;
-        }
-      }
-      lastImpulseT = t;
-
-      document.getElementById('impulseEst').innerHTML =
-        `${impulse_Ns.toFixed(2)}<span class="metric-unit"> N·s</span>`;
-      document.getElementById('angImpulseEst').innerHTML =
-        `${angImpulse_Nms.toFixed(2)}<span class="metric-unit"> N·m·s</span>`;
-    }
-
-    // Optional arrows
-    if (comPx && opts.velAcc) {
-      const scalePx = 120;
-      const v_px = { x: v_mps.x / s * (scalePx * 0.01), y: v_mps.y / s * (scalePx * 0.01) };
-      const a_px = { x: a_mps2.x / s * (scalePx * 0.003), y: a_mps2.y / s * (scalePx * 0.003) };
-      drawVector(comPx, v_px, 'v');
-      drawVector(comPx, a_px, 'a');
-    }
-    if (comPx && opts.force) {
-      const scalePx = 120;
-      const a_px = { x: a_mps2.x / s * (scalePx * 0.003), y: a_mps2.y / s * (scalePx * 0.003) };
-      drawVector(comPx, a_px, 'F');
-    }
-    if (comPx && (opts.moment || opts.angMom)) {
-      let y = comPx.y + 18;
-      if (opts.moment) { drawText(`τz: ${tau_Nm.toFixed(2)} N·m`, comPx.x + 10, y); y += 16; }
-      if (opts.angMom) { drawText(`Lz: ${Lz.toFixed(2)} kg·m²/s`, comPx.x + 10, y); }
-    }
-
-    // Plane-specific proxy metric
-    const plane = opts.plane;
-    let planeMetricDeg = 0;
-    let title = 'Plane Metric';
-
-    if (plane === 'sagittal') {
-      // trunk lean = angle of torso (shoulder mid -> hip mid) relative to vertical
-      title = 'Trunk Lean (Sagittal proxy)';
-      if (okSh && okHp) {
-        const torso = vecSub(hpMid, shMid); // downwards vector
-        // angle from vertical axis
-        const ang = Math.atan2(torso.x, torso.y) * 180/Math.PI; // x vs y gives left/right lean too
-        planeMetricDeg = Math.abs(ang);
-      }
-    } else if (plane === 'frontal') {
-      // pelvic tilt proxy: hip line angle vs horizontal
-      title = 'Pelvic Tilt (Frontal proxy)';
-      if (okHp) {
-        const dx = hipR.x - hipL.x;
-        const dy = hipR.y - hipL.y;
-        planeMetricDeg = Math.abs(Math.atan2(dy, dx) * 180/Math.PI);
-      }
-    } else if (plane === 'transverse') {
-      // transverse proxy: compare shoulder line angle vs hip line angle (screen-plane proxy)
-      title = 'Torso Rotation (Transverse proxy)';
-      if (okSh && okHp) {
-        const dxS = shR.x - shL.x;
-        const dyS = shR.y - shL.y;
-        const dxH = hipR.x - hipL.x;
-        const dyH = hipR.y - hipL.y;
-        const angS = Math.atan2(dyS, dxS) * 180/Math.PI;
-        const angH = Math.atan2(dyH, dxH) * 180/Math.PI;
-        let diff = angS - angH;
-        diff = ((diff + 180) % 360) - 180;
-        planeMetricDeg = Math.abs(diff);
-      }
-    }
-
-    document.getElementById('planeMetricTitle').textContent = title;
-    document.getElementById('planeMetricValue').innerHTML =
-      `${planeMetricDeg.toFixed(1)}<span class="metric-unit">°</span>`;
-
-    return {
-      kneeAngR, kneeAngL, elbowAngR, elbowAngL, hipAngR, hipAngL,
-      comPx,
-      displacement_m,
-      speed_mps,
-      acc_mps2: acc_mps2_mag,
-      forceVec_N: Fvec_N,
-      forceMag_N: Fmag_N,
-      moment_Nm: tau_Nm,
-      angMom: Lz,
-      impulse_Ns,
-      angImpulse_Nms,
-      plane,
-      planeMetricDeg,
-      neckPx: neck ? {x: neck.x, y: neck.y} : null
-    };
   }
 
   function updateFPS() {
@@ -986,12 +545,586 @@
     }
   }
 
-  // ======= Participants =======
-  function addParticipant() {
-    if (participants.length >= 10) {
-      showStatus('Maximum 10 participants reached!', 'error');
-      return;
+  // ---------- Charts ----------
+  function getWindowSec() {
+    return parseInt(document.getElementById('windowSeconds').value, 10);
+  }
+
+  function pushPoint(seriesName, t, value) {
+    const win = getWindowSec();
+    const arr = chartSeries[seriesName];
+    arr.push({ t, v: value });
+    // drop old points
+    const tMin = t - win;
+    while (arr.length && arr[0].t < tMin) arr.shift();
+  }
+
+  function sizeChartCanvas(c) {
+    // Make charts sharp on high-DPI
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = c.clientWidth;
+    const cssH = c.clientHeight;
+    const w = Math.floor(cssW * dpr);
+    const h = Math.floor(cssH * dpr);
+    if (c.width !== w || c.height !== h) {
+      c.width = w; c.height = h;
     }
+    return { w, h, dpr };
+  }
+
+  function drawChart(seriesName) {
+    const meta = charts[seriesName];
+    const c = document.getElementById(meta.canvasId);
+    const ctx = c.getContext("2d");
+    const { w, h } = sizeChartCanvas(c);
+
+    ctx.clearRect(0,0,w,h);
+
+    // Background grid
+    ctx.fillStyle = "#fafafa";
+    ctx.fillRect(0,0,w,h);
+
+    ctx.strokeStyle = "rgba(0,0,0,0.08)";
+    ctx.lineWidth = 1;
+    for (let i=1;i<=4;i++){
+      const y = (h*i)/5;
+      ctx.beginPath();
+      ctx.moveTo(0,y);
+      ctx.lineTo(w,y);
+      ctx.stroke();
+    }
+
+    const data = chartSeries[seriesName];
+    if (!data.length) return;
+
+    const t0 = data[0].t;
+    const t1 = data[data.length-1].t;
+    const dt = Math.max(1e-6, t1 - t0);
+
+    let minV = data[0].v, maxV = data[0].v;
+    for (const p of data) { if (p.v < minV) minV = p.v; if (p.v > maxV) maxV = p.v; }
+    if (minV === maxV) { minV -= 1; maxV += 1; }
+
+    // Slight padding
+    const pad = 0.08 * (maxV - minV);
+    minV -= pad; maxV += pad;
+
+    // Line
+    ctx.strokeStyle = "rgba(102,126,234,0.95)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i=0;i<data.length;i++){
+      const x = ( (data[i].t - t0) / dt ) * w;
+      const y = h - ( (data[i].v - minV) / (maxV - minV) ) * h;
+      if (i===0) ctx.moveTo(x,y);
+      else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+
+    // Label min/max
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.font = "12px Segoe UI, Arial";
+    ctx.fillText(`${maxV.toFixed(2)}`, 6, 14);
+    ctx.fillText(`${minV.toFixed(2)}`, 6, h - 6);
+  }
+
+  function drawAllCharts() {
+    drawChart("force");
+    drawChart("moment");
+    drawChart("impulse");
+    drawChart("angImpulse");
+    drawChart("angMom");
+  }
+
+  // ---------- Pose model init ----------
+  async function initializePoseDetection() {
+    // iOS Safari: prefer WebGL
+    try {
+      await tf.setBackend('webgl');
+      await tf.ready();
+    } catch (e) {
+      // fallback
+      try { await tf.setBackend('wasm'); await tf.ready(); } catch (_) {}
+    }
+    const model = window.poseDetection.SupportedModels.MoveNet;
+    detector = await window.poseDetection.createDetector(model, {
+      modelType: window.poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+    });
+  }
+
+  // ---------- Camera ----------
+  async function startCamera() {
+    try {
+      video = document.getElementById("video");
+      overlay = document.getElementById("overlay");
+      octx = overlay.getContext("2d");
+
+      const reqFps = parseInt(document.getElementById("fpsSelection").value, 10);
+      const facingMode = document.getElementById("cameraFacing").value;
+
+      video.setAttribute("playsinline", "");
+      video.muted = true;
+      video.autoplay = true;
+
+      showStatus("Starting camera…", "info");
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      });
+
+      streamRef = stream;
+      video.srcObject = stream;
+
+      await new Promise(res => video.onloadedmetadata = () => res());
+
+      const track = stream.getVideoTracks()[0];
+      if (track && track.applyConstraints) {
+        try {
+          await track.applyConstraints({ frameRate: { ideal: reqFps, max: reqFps } });
+        } catch (_) {}
+      }
+
+      await video.play();
+      resizeOverlayToVideo();
+
+      const settings = track && track.getSettings ? track.getSettings() : {};
+      document.getElementById("negotiatedInfo").textContent =
+        `${settings.width || video.videoWidth}×${settings.height || video.videoHeight} • req ${reqFps}fps • got ${settings.frameRate || "?"}fps`;
+
+      if (!detector) {
+        showStatus("Loading pose model…", "info");
+        await initializePoseDetection();
+      }
+
+      document.getElementById("recordBtn").disabled = false;
+
+      // reset states
+      prevState = null;
+      prevKpMap = null;
+      prevKpTime = null;
+
+      impulse_Ns = 0;
+      angImpulse_Nms = 0;
+      lastImpulseT = null;
+
+      showStatus("Ready ✅", "success");
+
+      if (animationId) cancelAnimationFrame(animationId);
+      loop();
+
+    } catch (err) {
+      console.error(err);
+      showStatus("Camera error: " + (err.message || err), "error");
+    }
+  }
+
+  function stopCamera() {
+    if (animationId) cancelAnimationFrame(animationId);
+    animationId = null;
+
+    if (video) { video.pause(); video.srcObject = null; }
+    if (streamRef) { streamRef.getTracks().forEach(t => t.stop()); streamRef = null; }
+
+    document.getElementById("recordBtn").disabled = true;
+    document.getElementById("stopBtn").disabled = true;
+
+    isRecording = false;
+    currentParticipant = null;
+
+    showStatus("Camera stopped.", "info");
+  }
+
+  // ---------- Overlay drawing ----------
+  function drawOverlay(kps, neck, opts) {
+    // Skeleton
+    if (opts.skeleton) {
+      octx.lineWidth = 4;
+      octx.strokeStyle = "rgba(255,0,0,0.95)";
+      for (const [i,j] of SKELETON) {
+        const a = kps[i], b = kps[j];
+        if (clampScore(a) && clampScore(b)) {
+          octx.beginPath();
+          octx.moveTo(a.x, a.y);
+          octx.lineTo(b.x, b.y);
+          octx.stroke();
+        }
+      }
+    }
+
+    // Joints + labels
+    if (opts.joints) {
+      for (let i=0;i<kps.length;i++){
+        const kp = kps[i];
+        if (!clampScore(kp)) continue;
+        octx.beginPath();
+        octx.arc(kp.x, kp.y, 6, 0, Math.PI*2);
+        octx.fillStyle = "rgba(0,255,0,0.95)";
+        octx.fill();
+        if (opts.labels) drawText(JOINT_LABELS[i], kp.x + 8, kp.y - 8);
+      }
+      if (neck) {
+        octx.beginPath();
+        octx.arc(neck.x, neck.y, 7, 0, Math.PI*2);
+        octx.fillStyle = "rgba(0,200,255,0.95)";
+        octx.fill();
+        if (opts.labels) drawText("neck", neck.x + 8, neck.y - 8);
+      }
+    }
+  }
+
+  // ---------- Main loop ----------
+  async function loop() {
+    try {
+      if (!video || video.readyState < 2 || !detector) {
+        animationId = requestAnimationFrame(loop);
+        return;
+      }
+
+      resizeOverlayToVideo();
+      octx.clearRect(0,0,overlay.width, overlay.height);
+
+      const poses = await detector.estimatePoses(video);
+      if (poses && poses.length) {
+        const kps = poses[0].keypoints;
+        const opts = getOpts();
+
+        const shL = kps[KP.shoulder_L], shR = kps[KP.shoulder_R];
+        const neck = (clampScore(shL) && clampScore(shR)) ? midpoint(shL, shR) : null;
+
+        drawOverlay(kps, neck, opts);
+
+        const metrics = computeMetrics(kps, neck, opts);
+
+        // Recording
+        if (isRecording && currentParticipant) {
+          recordingData.push(metrics.frameRecord);
+        }
+      }
+
+      updateFPS();
+      animationId = requestAnimationFrame(loop);
+
+    } catch (e) {
+      console.error("Loop error:", e);
+      showStatus("Pose estimation error (recovering)…", "error");
+      animationId = requestAnimationFrame(loop);
+    }
+  }
+
+  // ---------- Metrics + labels + charts ----------
+  function computeMetrics(kps, neck, opts) {
+    // Keypoints
+    const shR = kps[KP.shoulder_R], elR = kps[KP.elbow_R], wrR = kps[KP.wrist_R];
+    const shL = kps[KP.shoulder_L], elL = kps[KP.elbow_L], wrL = kps[KP.wrist_L];
+
+    const hipR = kps[KP.hip_R], knR = kps[KP.knee_R], anR = kps[KP.ankle_R];
+    const hipL = kps[KP.hip_L], knL = kps[KP.knee_L], anL = kps[KP.ankle_L];
+
+    // Angles:
+    // Shoulder angle: elbow - shoulder - hip
+    // Elbow angle: shoulder - elbow - wrist
+    // Wrist angle (proxy): elbow - wrist - (wrist + (wrist-elbow))  => uses forearm direction continuation
+    // Hip: shoulder - hip - knee
+    // Knee: hip - knee - ankle
+    // Ankle: knee - ankle - (ankle + (ankle-knee)) => shank continuation proxy
+    let shoulderAngR=null, shoulderAngL=null,
+        elbowAngR=null, elbowAngL=null,
+        wristAngR=null, wristAngL=null,
+        hipAngR=null, hipAngL=null,
+        kneeAngR=null, kneeAngL=null,
+        ankleAngR=null, ankleAngL=null;
+
+    if (clampScore(elR) && clampScore(shR) && clampScore(hipR)) shoulderAngR = calcAngle(elR, shR, hipR);
+    if (clampScore(elL) && clampScore(shL) && clampScore(hipL)) shoulderAngL = calcAngle(elL, shL, hipL);
+
+    if (clampScore(shR) && clampScore(elR) && clampScore(wrR)) elbowAngR = calcAngle(shR, elR, wrR);
+    if (clampScore(shL) && clampScore(elL) && clampScore(wrL)) elbowAngL = calcAngle(shL, elL, wrL);
+
+    if (clampScore(shR) && clampScore(hipR) && clampScore(knR)) hipAngR = calcAngle(shR, hipR, knR);
+    if (clampScore(shL) && clampScore(hipL) && clampScore(knL)) hipAngL = calcAngle(shL, hipL, knL);
+
+    if (clampScore(hipR) && clampScore(knR) && clampScore(anR)) kneeAngR = calcAngle(hipR, knR, anR);
+    if (clampScore(hipL) && clampScore(knL) && clampScore(anL)) kneeAngL = calcAngle(hipL, knL, anL);
+
+    // Wrist proxy: use forearm direction extension
+    if (clampScore(elR) && clampScore(wrR)) {
+      const p3 = { x: wrR.x + (wrR.x - elR.x), y: wrR.y + (wrR.y - elR.y) };
+      wristAngR = calcAngle(elR, wrR, p3);
+    }
+    if (clampScore(elL) && clampScore(wrL)) {
+      const p3 = { x: wrL.x + (wrL.x - elL.x), y: wrL.y + (wrL.y - elL.y) };
+      wristAngL = calcAngle(elL, wrL, p3);
+    }
+
+    // Ankle proxy: shank direction extension
+    if (clampScore(knR) && clampScore(anR)) {
+      const p3 = { x: anR.x + (anR.x - knR.x), y: anR.y + (anR.y - knR.y) };
+      ankleAngR = calcAngle(knR, anR, p3);
+    }
+    if (clampScore(knL) && clampScore(anL)) {
+      const p3 = { x: anL.x + (anL.x - knL.x), y: anL.y + (anL.y - knL.y) };
+      ankleAngL = calcAngle(knL, anL, p3);
+    }
+
+    // Update angle panels
+    document.getElementById("shoulderAngles").innerHTML = `${shoulderAngR?Math.round(shoulderAngR):0} / ${shoulderAngL?Math.round(shoulderAngL):0}<span class="unit">°</span>`;
+    document.getElementById("elbowAngles").innerHTML    = `${elbowAngR?Math.round(elbowAngR):0} / ${elbowAngL?Math.round(elbowAngL):0}<span class="unit">°</span>`;
+    document.getElementById("wristAngles").innerHTML    = `${wristAngR?Math.round(wristAngR):0} / ${wristAngL?Math.round(wristAngL):0}<span class="unit">°</span>`;
+    document.getElementById("hipAngles").innerHTML      = `${hipAngR?Math.round(hipAngR):0} / ${hipAngL?Math.round(hipAngL):0}<span class="unit">°</span>`;
+    document.getElementById("kneeAngles").innerHTML     = `${kneeAngR?Math.round(kneeAngR):0} / ${kneeAngL?Math.round(kneeAngL):0}<span class="unit">°</span>`;
+    document.getElementById("ankleAngles").innerHTML    = `${ankleAngR?Math.round(ankleAngR):0} / ${ankleAngL?Math.round(ankleAngL):0}<span class="unit">°</span>`;
+
+    // Live labels on video
+    if (opts.angleLabels) {
+      if (shoulderAngR && clampScore(shR)) drawText(`Shoulder R ${Math.round(shoulderAngR)}°`, shR.x + 10, shR.y + 18);
+      if (shoulderAngL && clampScore(shL)) drawText(`Shoulder L ${Math.round(shoulderAngL)}°`, shL.x + 10, shL.y + 18);
+
+      if (elbowAngR && clampScore(elR)) drawText(`Elbow R ${Math.round(elbowAngR)}°`, elR.x + 10, elR.y + 18);
+      if (elbowAngL && clampScore(elL)) drawText(`Elbow L ${Math.round(elbowAngL)}°`, elL.x + 10, elL.y + 18);
+
+      if (wristAngR && clampScore(wrR)) drawText(`Wrist R ${Math.round(wristAngR)}°`, wrR.x + 10, wrR.y + 18);
+      if (wristAngL && clampScore(wrL)) drawText(`Wrist L ${Math.round(wristAngL)}°`, wrL.x + 10, wrL.y + 18);
+
+      if (hipAngR && clampScore(hipR)) drawText(`Hip R ${Math.round(hipAngR)}°`, hipR.x + 10, hipR.y + 18);
+      if (hipAngL && clampScore(hipL)) drawText(`Hip L ${Math.round(hipAngL)}°`, hipL.x + 10, hipL.y + 18);
+
+      if (kneeAngR && clampScore(knR)) drawText(`Knee R ${Math.round(kneeAngR)}°`, knR.x + 10, knR.y + 18);
+      if (kneeAngL && clampScore(knL)) drawText(`Knee L ${Math.round(kneeAngL)}°`, knL.x + 10, knL.y + 18);
+
+      if (ankleAngR && clampScore(anR)) drawText(`Ankle R ${Math.round(ankleAngR)}°`, anR.x + 10, anR.y + 18);
+      if (ankleAngL && clampScore(anL)) drawText(`Ankle L ${Math.round(ankleAngL)}°`, anL.x + 10, anL.y + 18);
+    }
+
+    // COM estimation
+    let comPx = null;
+    const okSh = clampScore(shL) && clampScore(shR);
+    const okHp = clampScore(hipL) && clampScore(hipR);
+    const shMid = okSh ? midpoint(shL, shR) : null;
+    const hpMid = okHp ? midpoint(hipL, hipR) : null;
+
+    if (okSh && okHp) comPx = { x: shMid.x*0.4 + hpMid.x*0.6, y: shMid.y*0.4 + hpMid.y*0.6 };
+    else if (okHp) comPx = { x: hpMid.x, y: hpMid.y };
+    else if (clampScore(hipR)) comPx = { x: hipR.x, y: hipR.y };
+
+    if (opts.com && comPx) {
+      octx.beginPath();
+      octx.arc(comPx.x, comPx.y, 7, 0, Math.PI*2);
+      octx.fillStyle = "rgba(255,255,0,0.95)";
+      octx.fill();
+      drawText("COM", comPx.x + 8, comPx.y - 8);
+    }
+
+    // Kinetics (pose-based)
+    const t = performance.now() / 1000;
+    const s = pxToMetersScale();
+
+    const mass = currentParticipant ? currentParticipant.mass : 70;
+
+    let Fmag = 0, tau = 0, Lz = 0;
+
+    // COM-based acceleration -> force
+    if (comPx) {
+      const com_m = { x: comPx.x * s, y: comPx.y * s };
+
+      if (prevState) {
+        const dt = t - prevState.t;
+        if (dt > 1e-4 && dt < 0.2) {
+          const d = vecSub(com_m, prevState.com_m);
+          const v = vecMul(d, 1/dt);
+          const dv = vecSub(v, prevState.v_mps);
+          const a = vecMul(dv, 1/dt);
+
+          const Fvec = { x: mass * a.x, y: mass * a.y };
+          Fmag = vecLen(Fvec);
+
+          // Moment about COM: use pelvis as r
+          if (okHp) {
+            const r_m = { x: (hpMid.x - comPx.x) * s, y: (hpMid.y - comPx.y) * s };
+            tau = crossZ(r_m, Fvec);
+          }
+
+          // Angular momentum Lz (lumped)
+          const lumps = [
+            { name:'shoulder_L', kp: shL, m: mass*0.10 },
+            { name:'shoulder_R', kp: shR, m: mass*0.10 },
+            { name:'hip_L', kp: hipL, m: mass*0.20 },
+            { name:'hip_R', kp: hipR, m: mass*0.20 },
+            { name:'knee_L', kp: knL, m: mass*0.10 },
+            { name:'knee_R', kp: knR, m: mass*0.10 },
+            { name:'ankle_L', kp: anL, m: mass*0.05 },
+            { name:'ankle_R', kp: anR, m: mass*0.05 },
+            { name:'wrist_L', kp: wrL, m: mass*0.05 },
+            { name:'wrist_R', kp: wrR, m: mass*0.05 },
+          ];
+
+          if (prevKpMap && prevKpTime) {
+            const dt2 = t - prevKpTime;
+            if (dt2 > 1e-4 && dt2 < 0.2) {
+              for (const L of lumps) {
+                if (!clampScore(L.kp)) continue;
+                const prev = prevKpMap[L.name];
+                if (!prev) continue;
+                const pos_m = { x: L.kp.x*s, y: L.kp.y*s };
+                const prev_m = { x: prev.x*s, y: prev.y*s };
+                const v_i = vecMul(vecSub(pos_m, prev_m), 1/dt2);
+                const r_i = vecSub(pos_m, com_m);
+                Lz += L.m * crossZ(r_i, v_i);
+              }
+            }
+          }
+
+          // Impulse integrators (only meaningful during recording)
+          if (isRecording) {
+            if (lastImpulseT != null) {
+              const dtI = t - lastImpulseT;
+              if (dtI > 1e-4 && dtI < 0.2) {
+                impulse_Ns += Fmag * dtI;
+                angImpulse_Nms += tau * dtI;
+              }
+            }
+            lastImpulseT = t;
+          }
+        }
+      }
+
+      prevState = { t, com_m, v_mps: prevState ? prevState.v_mps : {x:0,y:0} };
+      // update v_mps properly on next frame: store it now if we computed it
+      if (prevState && prevState.t === t && comPx && prevState.com_m) {
+        // leave as-is; v updated in next frame computation block
+      }
+
+      // Update prev keypoint map
+      prevKpMap = {
+        shoulder_L: shL, shoulder_R: shR,
+        hip_L: hipL, hip_R: hipR,
+        knee_L: knL, knee_R: knR,
+        ankle_L: anL, ankle_R: anR,
+        wrist_L: wrL, wrist_R: wrR
+      };
+      prevKpTime = t;
+    }
+
+    // Push to charts
+    pushPoint("force", t, Fmag);
+    pushPoint("moment", t, tau);
+    pushPoint("impulse", t, impulse_Ns);
+    pushPoint("angImpulse", t, angImpulse_Nms);
+    pushPoint("angMom", t, Lz);
+
+    // Update chart header live labels
+    document.getElementById("lblForce").textContent = `${Fmag.toFixed(1)} N`;
+    document.getElementById("lblMoment").textContent = `${tau.toFixed(2)} N·m`;
+    document.getElementById("lblImpulse").textContent = `${impulse_Ns.toFixed(2)} N·s`;
+    document.getElementById("lblAngImpulse").textContent = `${angImpulse_Nms.toFixed(2)} N·m·s`;
+    document.getElementById("lblAngMom").textContent = `${Lz.toFixed(2)}`;
+
+    // Draw charts at a sane rate (don’t redraw every pose frame on high FPS)
+    throttleCharts(t);
+
+    // Prepare a compact frame record for export
+    const frameRecord = {
+      t_ms: Date.now(),
+      fpsDetected: detectedFPS,
+      plane: opts.plane,
+
+      shoulderAngle_R: shoulderAngR ?? null, shoulderAngle_L: shoulderAngL ?? null,
+      elbowAngle_R: elbowAngR ?? null, elbowAngle_L: elbowAngL ?? null,
+      wristAngle_R: wristAngR ?? null, wristAngle_L: wristAngL ?? null,
+      hipAngle_R: hipAngR ?? null, hipAngle_L: hipAngL ?? null,
+      kneeAngle_R: kneeAngR ?? null, kneeAngle_L: kneeAngL ?? null,
+      ankleAngle_R: ankleAngR ?? null, ankleAngle_L: ankleAngL ?? null,
+
+      force_N: Fmag,
+      moment_Nm: tau,
+      impulse_Ns: impulse_Ns,
+      angImpulse_Nms: angImpulse_Nms,
+      angMom_z: Lz,
+
+      joints: {
+        shoulder_L: pickJoint(kps, KP.shoulder_L),
+        shoulder_R: pickJoint(kps, KP.shoulder_R),
+        elbow_L: pickJoint(kps, KP.elbow_L),
+        elbow_R: pickJoint(kps, KP.elbow_R),
+        wrist_L: pickJoint(kps, KP.wrist_L),
+        wrist_R: pickJoint(kps, KP.wrist_R),
+        hip_L: pickJoint(kps, KP.hip_L),
+        hip_R: pickJoint(kps, KP.hip_R),
+        knee_L: pickJoint(kps, KP.knee_L),
+        knee_R: pickJoint(kps, KP.knee_R),
+        ankle_L: pickJoint(kps, KP.ankle_L),
+        ankle_R: pickJoint(kps, KP.ankle_R),
+        neck: (neck ? { x: neck.x, y: neck.y, score: neck.score ?? 0.5 } : null)
+      }
+    };
+
+    return { frameRecord };
+  }
+
+  function pickJoint(kps, idx) {
+    const kp = kps[idx];
+    return clampScore(kp) ? { x: kp.x, y: kp.y, score: kp.score } : null;
+  }
+
+  // Chart redraw throttle (~15fps)
+  let lastChartDrawT = 0;
+  function throttleCharts(t) {
+    if (t - lastChartDrawT < 1/15) return;
+    lastChartDrawT = t;
+    drawAllCharts();
+  }
+
+  // ---------- Recording ----------
+  function startRecording() {
+    const selectedId = document.getElementById("selectedParticipant").value;
+    if (!selectedId) { showStatus("Select a participant first!", "error"); return; }
+    currentParticipant = participants.find(p => String(p.id) === String(selectedId));
+    if (!currentParticipant) { showStatus("Participant not found.", "error"); return; }
+
+    isRecording = true;
+    recordingData = [];
+
+    impulse_Ns = 0;
+    angImpulse_Nms = 0;
+    lastImpulseT = null;
+
+    document.getElementById("recordBtn").disabled = true;
+    document.getElementById("stopBtn").disabled = false;
+
+    showStatus(`Recording for ${currentParticipant.name}…`, "info");
+  }
+
+  function stopRecording() {
+    if (isRecording && currentParticipant && recordingData.length) {
+      currentParticipant.recordings.push({
+        timestamp: new Date().toISOString(),
+        fps: detectedFPS,
+        plane: document.getElementById("planeSelection").value,
+        totalImpulse_Ns: impulse_Ns,
+        totalAngImpulse_Nms: angImpulse_Nms,
+        data: recordingData
+      });
+      updateParticipantsList();
+      showStatus(`Saved ✅ ${recordingData.length} frames`, "success");
+    } else {
+      showStatus("Stopped (no frames saved).", "info");
+    }
+
+    isRecording = false;
+    recordingData = [];
+    currentParticipant = null;
+
+    document.getElementById("recordBtn").disabled = false;
+    document.getElementById("stopBtn").disabled = true;
+  }
+
+  // ---------- Participants ----------
+  function addParticipant() {
+    if (participants.length >= 10) { showStatus("Max 10 participants.", "error"); return; }
     const name = document.getElementById('participantName').value.trim();
     const sex = document.getElementById('participantSex').value;
     const age = document.getElementById('participantAge').value;
@@ -999,11 +1132,10 @@
     const height = document.getElementById('participantHeight').value;
 
     if (!name || !sex || !age || !mass || !height) {
-      showStatus('Please fill in all participant information!', 'error');
-      return;
+      showStatus("Fill all participant fields.", "error"); return;
     }
 
-    const participant = {
+    participants.push({
       id: Date.now(),
       name,
       sex,
@@ -1011,12 +1143,11 @@
       mass: parseFloat(mass),
       height: parseFloat(height),
       recordings: []
-    };
-    participants.push(participant);
+    });
 
-    updateParticipantsList();
     clearParticipantForm();
-    showStatus(`Participant "${name}" added ✅`, 'success');
+    updateParticipantsList();
+    showStatus(`Added "${name}" ✅`, "success");
   }
 
   function clearParticipantForm() {
@@ -1028,237 +1159,118 @@
   }
 
   function updateParticipantsList() {
-    document.getElementById('participantCount').textContent = participants.length;
+    document.getElementById("participantCount").textContent = participants.length;
 
-    const list = document.getElementById('participantsList');
+    const list = document.getElementById("participantsList");
     list.innerHTML = participants.map(p => `
-      <div class="participant-item">
-        <div class="participant-info">
-          <strong>${p.name}</strong> — ${p.sex}, ${p.age}y, ${p.mass}kg, ${p.height}cm
-          <br/><small>Recordings: ${p.recordings.length}</small>
+      <div class="item">
+        <div>
+          <b>${p.name}</b> — ${p.sex}, ${p.age}y, ${p.mass}kg, ${p.height}cm
+          <div style="color:#666; font-weight:800; font-size:.88em; margin-top:4px;">
+            Recordings: ${p.recordings.length}
+          </div>
         </div>
         <button class="btn btn-danger" onclick="removeParticipant(${p.id})">Remove</button>
       </div>
-    `).join('');
+    `).join("");
 
-    const sel = document.getElementById('selectedParticipant');
-    sel.innerHTML = '<option value="">Select a participant</option>' +
-      participants.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    const sel = document.getElementById("selectedParticipant");
+    sel.innerHTML = `<option value="">Select a participant</option>` +
+      participants.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
   }
 
   function removeParticipant(id) {
     participants = participants.filter(p => p.id !== id);
-    if (currentParticipant && currentParticipant.id === id) currentParticipant = null;
     updateParticipantsList();
-    showStatus('Participant removed.', 'info');
+    showStatus("Participant removed.", "info");
   }
 
-  // ======= Recording =======
-  function startRecording() {
-    const selectedId = document.getElementById('selectedParticipant').value;
-    if (!selectedId) {
-      showStatus('Please select a participant first!', 'error');
-      return;
-    }
-    currentParticipant = participants.find(p => String(p.id) === String(selectedId));
-    if (!currentParticipant) {
-      showStatus('Participant not found.', 'error');
-      return;
-    }
-
-    isRecording = true;
-    recordingData = [];
-
-    // reset impulse integrators for this recording
-    impulse_Ns = 0;
-    angImpulse_Nms = 0;
-    lastImpulseT = null;
-
-    document.getElementById('recordBtn').disabled = true;
-    document.getElementById('stopBtn').disabled = false;
-
-    showStatus(`Recording for ${currentParticipant.name}...`, 'info');
-  }
-
-  function stopRecording() {
-    if (isRecording && currentParticipant && recordingData.length > 0) {
-      currentParticipant.recordings.push({
-        timestamp: new Date().toISOString(),
-        requestedFPS: reqFps,
-        detectedFPS,
-        plane: document.getElementById('planeSelection').value,
-        totalImpulse_Ns: impulse_Ns,
-        totalAngImpulse_Nms: angImpulse_Nms,
-        data: recordingData
-      });
-      updateParticipantsList();
-      showStatus(`Saved ✅ ${recordingData.length} frames`, 'success');
-    } else {
-      showStatus('Recording stopped (no frames saved).', 'info');
-    }
-
-    isRecording = false;
-    recordingData = [];
-    currentParticipant = null;
-
-    document.getElementById('recordBtn').disabled = false;
-    document.getElementById('stopBtn').disabled = true;
-  }
-
-  function pickJoint(keypoints, idx) {
-    const kp = keypoints[idx];
-    return clampScore(kp) ? { x: kp.x, y: kp.y, score: kp.score } : null;
-  }
-
-  function recordFrame(keypoints, neck, frameMetrics) {
-    const joints = {
-      shoulder_L: pickJoint(keypoints, KP.shoulder_L),
-      shoulder_R: pickJoint(keypoints, KP.shoulder_R),
-      elbow_L: pickJoint(keypoints, KP.elbow_L),
-      elbow_R: pickJoint(keypoints, KP.elbow_R),
-      wrist_L: pickJoint(keypoints, KP.wrist_L),
-      wrist_R: pickJoint(keypoints, KP.wrist_R),
-      hip_L: pickJoint(keypoints, KP.hip_L),
-      hip_R: pickJoint(keypoints, KP.hip_R),
-      knee_L: pickJoint(keypoints, KP.knee_L),
-      knee_R: pickJoint(keypoints, KP.knee_R),
-      ankle_L: pickJoint(keypoints, KP.ankle_L),
-      ankle_R: pickJoint(keypoints, KP.ankle_R),
-      neck: (neck ? { x: neck.x, y: neck.y, score: neck.score ?? 0.5 } : null)
-    };
-
-    recordingData.push({
-      t_ms: Date.now(),
-      fpsDetected: detectedFPS,
-      plane: frameMetrics.plane,
-      planeMetricDeg: frameMetrics.planeMetricDeg,
-
-      joints,
-
-      kneeAngle_R: frameMetrics.kneeAngR ?? null,
-      kneeAngle_L: frameMetrics.kneeAngL ?? null,
-      elbowAngle_R: frameMetrics.elbowAngR ?? null,
-      elbowAngle_L: frameMetrics.elbowAngL ?? null,
-      hipAngle_R: frameMetrics.hipAngR ?? null,
-      hipAngle_L: frameMetrics.hipAngL ?? null,
-
-      comPx: frameMetrics.comPx ? { x: frameMetrics.comPx.x, y: frameMetrics.comPx.y } : null,
-
-      disp_m: frameMetrics.displacement_m ?? 0,
-      speed_mps: frameMetrics.speed_mps ?? 0,
-      acc_mps2: frameMetrics.acc_mps2 ?? 0,
-
-      forceMag_N: frameMetrics.forceMag_N ?? 0,
-      moment_Nm: frameMetrics.moment_Nm ?? 0,
-      angMom_z: frameMetrics.angMom ?? 0,
-
-      impulse_Ns: frameMetrics.impulse_Ns ?? 0,
-      angImpulse_Nms: frameMetrics.angImpulse_Nms ?? 0
-    });
-  }
-
-  // ======= XLSX Export =======
+  // ---------- Export XLSX ----------
   function downloadData() {
-    if (participants.length === 0) {
-      showStatus('No participants to export!', 'error');
-      return;
-    }
+    if (!participants.length) { showStatus("No participants to export!", "error"); return; }
 
     const wb = XLSX.utils.book_new();
 
-    participants.forEach(participant => {
-      const sheetData = [];
-      sheetData.push(['Participant Information']);
-      sheetData.push(['Name', participant.name]);
-      sheetData.push(['Sex', participant.sex]);
-      sheetData.push(['Age', participant.age]);
-      sheetData.push(['Mass (kg)', participant.mass]);
-      sheetData.push(['Height (cm)', participant.height]);
-      sheetData.push([]);
-      sheetData.push(['Recordings', participant.recordings.length]);
+    participants.forEach(p => {
+      const rows = [];
+      rows.push(["Participant Information"]);
+      rows.push(["Name", p.name]);
+      rows.push(["Sex", p.sex]);
+      rows.push(["Age", p.age]);
+      rows.push(["Mass (kg)", p.mass]);
+      rows.push(["Height (cm)", p.height]);
+      rows.push([]);
+      rows.push(["Recordings", p.recordings.length]);
 
-      participant.recordings.forEach((rec, idx) => {
-        sheetData.push([]);
-        sheetData.push([`Recording ${idx + 1}`, rec.timestamp]);
-        sheetData.push(['Plane', rec.plane]);
-        sheetData.push(['Requested FPS', rec.requestedFPS]);
-        sheetData.push(['Detected FPS', rec.detectedFPS]);
-        sheetData.push(['Total Impulse (N·s)', Number((rec.totalImpulse_Ns ?? 0).toFixed(3))]);
-        sheetData.push(['Total Angular Impulse (N·m·s)', Number((rec.totalAngImpulse_Nms ?? 0).toFixed(3))]);
-        sheetData.push([]);
+      p.recordings.forEach((rec, idx) => {
+        rows.push([]);
+        rows.push([`Recording ${idx+1}`, rec.timestamp]);
+        rows.push(["Plane", rec.plane]);
+        rows.push(["FPS", rec.fps]);
+        rows.push(["Total Impulse (N·s)", rec.totalImpulse_Ns]);
+        rows.push(["Total Angular Impulse (N·m·s)", rec.totalAngImpulse_Nms]);
+        rows.push([]);
 
         const header = [
-          'Frame','t_ms','plane','planeMetricDeg',
-
-          'shoulder_L_x','shoulder_L_y','shoulder_R_x','shoulder_R_y',
-          'elbow_L_x','elbow_L_y','elbow_R_x','elbow_R_y',
-          'wrist_L_x','wrist_L_y','wrist_R_x','wrist_R_y',
-          'hip_L_x','hip_L_y','hip_R_x','hip_R_y',
-          'knee_L_x','knee_L_y','knee_R_x','knee_R_y',
-          'ankle_L_x','ankle_L_y','ankle_R_x','ankle_R_y',
-          'neck_x','neck_y',
-
-          'kneeAngle_R','kneeAngle_L',
-          'elbowAngle_R','elbowAngle_L',
-          'hipAngle_R','hipAngle_L',
-
-          'com_x','com_y',
-          'disp_m','speed_mps','acc_mps2',
-          'forceMag_N','moment_Nm','angMom_z',
-          'impulse_Ns','angImpulse_Nms'
+          "Frame","t_ms","plane","fpsDetected",
+          "shoulderAngle_R","shoulderAngle_L",
+          "elbowAngle_R","elbowAngle_L",
+          "wristAngle_R","wristAngle_L",
+          "hipAngle_R","hipAngle_L",
+          "kneeAngle_R","kneeAngle_L",
+          "ankleAngle_R","ankleAngle_L",
+          "force_N","moment_Nm","impulse_Ns","angImpulse_Nms","angMom_z",
+          "shoulder_L_x","shoulder_L_y","shoulder_R_x","shoulder_R_y",
+          "elbow_L_x","elbow_L_y","elbow_R_x","elbow_R_y",
+          "wrist_L_x","wrist_L_y","wrist_R_x","wrist_R_y",
+          "hip_L_x","hip_L_y","hip_R_x","hip_R_y",
+          "knee_L_x","knee_L_y","knee_R_x","knee_R_y",
+          "ankle_L_x","ankle_L_y","ankle_R_x","ankle_R_y",
+          "neck_x","neck_y"
         ];
-        sheetData.push(header);
+        rows.push(header);
 
-        rec.data.forEach((f, frameIdx) => {
+        rec.data.forEach((f, i) => {
           const j = f.joints || {};
-          const getXY = (obj) => obj ? [Number(obj.x.toFixed(2)), Number(obj.y.toFixed(2))] : ['N/A','N/A'];
-
-          const row = [
-            frameIdx, f.t_ms, f.plane, Number((f.planeMetricDeg ?? 0).toFixed(2)),
-
-            ...getXY(j.shoulder_L), ...getXY(j.shoulder_R),
-            ...getXY(j.elbow_L), ...getXY(j.elbow_R),
-            ...getXY(j.wrist_L), ...getXY(j.wrist_R),
-            ...getXY(j.hip_L), ...getXY(j.hip_R),
-            ...getXY(j.knee_L), ...getXY(j.knee_R),
-            ...getXY(j.ankle_L), ...getXY(j.ankle_R),
-            ...getXY(j.neck),
-
-            f.kneeAngle_R ?? 'N/A', f.kneeAngle_L ?? 'N/A',
-            f.elbowAngle_R ?? 'N/A', f.elbowAngle_L ?? 'N/A',
-            f.hipAngle_R ?? 'N/A', f.hipAngle_L ?? 'N/A',
-
-            f.comPx ? Number(f.comPx.x.toFixed(2)) : 'N/A',
-            f.comPx ? Number(f.comPx.y.toFixed(2)) : 'N/A',
-
-            Number((f.disp_m ?? 0).toFixed(4)),
-            Number((f.speed_mps ?? 0).toFixed(4)),
-            Number((f.acc_mps2 ?? 0).toFixed(4)),
-
-            Number((f.forceMag_N ?? 0).toFixed(3)),
+          const xy = (o) => o ? [Number(o.x.toFixed(2)), Number(o.y.toFixed(2))] : ["N/A","N/A"];
+          rows.push([
+            i, f.t_ms, f.plane, f.fpsDetected,
+            f.shoulderAngle_R ?? "N/A", f.shoulderAngle_L ?? "N/A",
+            f.elbowAngle_R ?? "N/A", f.elbowAngle_L ?? "N/A",
+            f.wristAngle_R ?? "N/A", f.wristAngle_L ?? "N/A",
+            f.hipAngle_R ?? "N/A", f.hipAngle_L ?? "N/A",
+            f.kneeAngle_R ?? "N/A", f.kneeAngle_L ?? "N/A",
+            f.ankleAngle_R ?? "N/A", f.ankleAngle_L ?? "N/A",
+            Number((f.force_N ?? 0).toFixed(3)),
             Number((f.moment_Nm ?? 0).toFixed(3)),
+            Number((f.impulse_Ns ?? 0).toFixed(3)),
+            Number((f.angImpulse_Nms ?? 0).toFixed(3)),
             Number((f.angMom_z ?? 0).toFixed(3)),
-
-            Number((f.impulse_Ns ?? 0).toFixed(4)),
-            Number((f.angImpulse_Nms ?? 0).toFixed(4))
-          ];
-
-          sheetData.push(row);
+            ...xy(j.shoulder_L), ...xy(j.shoulder_R),
+            ...xy(j.elbow_L), ...xy(j.elbow_R),
+            ...xy(j.wrist_L), ...xy(j.wrist_R),
+            ...xy(j.hip_L), ...xy(j.hip_R),
+            ...xy(j.knee_L), ...xy(j.knee_R),
+            ...xy(j.ankle_L), ...xy(j.ankle_R),
+            ...xy(j.neck)
+          ]);
         });
       });
 
-      const ws = XLSX.utils.aoa_to_sheet(sheetData);
-      XLSX.utils.book_append_sheet(wb, ws, participant.name.substring(0, 31));
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, p.name.substring(0,31));
     });
 
-    XLSX.writeFile(wb, `sport_performance_data_${new Date().toISOString().split('T')[0]}.xlsx`);
-    showStatus('Exported XLSX ✅', 'success');
+    XLSX.writeFile(wb, `sport_performance_${new Date().toISOString().split("T")[0]}.xlsx`);
+    showStatus("Exported XLSX ✅", "success");
   }
 
-  // ======= Boot =======
-  window.addEventListener('load', () => {
+  // ---------- Boot ----------
+  window.addEventListener("load", () => {
     updateParticipantsList();
-    showStatus('Ready. Add participants, then Start Camera.', 'info');
+    // Pre-size charts once
+    window.addEventListener("resize", () => drawAllCharts());
+    showStatus("Ready. Add participant → Start Camera.", "info");
   });
 </script>
 </body>
