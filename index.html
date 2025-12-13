@@ -13,7 +13,7 @@ without prior written permission from Ng Jun Wei.
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="author" content="Ng Jun Wei">
   <meta name="copyright" content="© 2025 Ng Jun Wei. All rights reserved.">
-  <title>Sport Performance Analyzer (iOS) + Projectile</title>
+  <title>Sport Performance Analyzer (iOS) + Joint-Driven Kinetics</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0"></script>
@@ -47,12 +47,7 @@ without prior written permission from Ng Jun Wei.
     }
     @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
 
-    .card {
-      background:#f8f9fa;
-      border-radius: 14px;
-      padding: 14px;
-    }
-
+    .card { background:#f8f9fa; border-radius: 14px; padding: 14px; }
     .form-grid {
       display:grid;
       grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -101,12 +96,7 @@ without prior written permission from Ng Jun Wei.
     .sticky { position: sticky; top: 8px; }
     @media (max-width: 980px) { .sticky { top: 0; z-index: 50; } }
 
-    .video-wrap {
-      position:relative;
-      background:#000;
-      border-radius: 14px;
-      overflow:hidden;
-    }
+    .video-wrap { position:relative; background:#000; border-radius: 14px; overflow:hidden; }
     video {
       width:100%;
       height:auto;
@@ -201,7 +191,6 @@ without prior written permission from Ng Jun Wei.
     }
     .chart-title b{ color:#222; }
     .chart-title span{ color:#666; font-weight: 850; font-size: .9em; }
-
     canvas.chart{
       width: 100%;
       height: 150px;
@@ -235,7 +224,7 @@ without prior written permission from Ng Jun Wei.
 <body>
 <div class="container">
   <h1>🏃‍♂️ Sport Performance Analyzer</h1>
-  <p class="subtitle">iOS-safe pose overlay • selectable metrics • filtered force/moment • projectile tracking</p>
+  <p class="subtitle">iOS-safe overlay • selectable metrics • joint-driven Force–Time & Moment–Time • projectile tracking</p>
 
   <div id="statusMessage" class="status-message"></div>
 
@@ -322,6 +311,41 @@ without prior written permission from Ng Jun Wei.
               <option value="12">12 Hz (less smooth)</option>
             </select>
           </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <h3>Kinetics Driver (Selected Joint Kinematics)</h3>
+        <div class="form-grid">
+          <div>
+            <label for="kinJoint">Joint</label>
+            <select id="kinJoint">
+              <option value="shoulder">Shoulder</option>
+              <option value="elbow">Elbow</option>
+              <option value="wrist">Wrist</option>
+              <option value="hip" selected>Hip</option>
+              <option value="knee">Knee</option>
+              <option value="ankle">Ankle</option>
+              <option value="neck">Neck</option>
+            </select>
+          </div>
+          <div>
+            <label for="kinSide">Side</label>
+            <select id="kinSide">
+              <option value="R" selected>Right (R)</option>
+              <option value="L">Left (L)</option>
+            </select>
+          </div>
+          <div>
+            <label for="kinMode">Kinetics Model</label>
+            <select id="kinMode">
+              <option value="jointAccel" selected>Force from joint acceleration + Moment from segment α</option>
+            </select>
+          </div>
+        </div>
+        <div class="mini">
+          Force–Time uses the selected joint’s <b>linear acceleration</b> with an effective segment mass fraction.
+          Moment–Time uses <b>segment inertia × angular acceleration</b>. (2D proxy, filtered.)
         </div>
 
         <div class="divider"></div>
@@ -416,7 +440,7 @@ without prior written permission from Ng Jun Wei.
 
           <div class="chart-card">
             <div class="chart-title">
-              <b>Moment–Time τz (N·m)</b>
+              <b>Moment–Time τ (N·m)</b>
               <span id="lblMoment">0.00 N·m</span>
             </div>
             <canvas id="chartMoment" class="chart"></canvas>
@@ -442,6 +466,7 @@ without prior written permission from Ng Jun Wei.
             <div><span id="fpsIndicator">FPS: 0</span></div>
             <small id="negotiatedInfo">—</small>
             <small id="projInfo">Projectile: —</small>
+            <small id="kinInfo">Kinetics: —</small>
           </div>
         </div>
       </div>
@@ -473,16 +498,12 @@ without prior written permission from Ng Jun Wei.
   let frameCount = 0;
   let lastFPSUpdate = Date.now();
 
-  let prevFrame = null; // pose/COM state
+  let prevFrame = null; // stores pose/kinetic state
 
   // Impulse accumulators
   let impulse_Ns = 0;
   let angImpulse_Nms = 0;
   let lastImpulseT = null;
-
-  // Filter state
-  let filt = { force: null, moment: null };
-  let lastFilterT = null;
 
   // Selected metrics
   let selectedMetrics = []; // {id,type,joint,side}
@@ -491,6 +512,16 @@ without prior written permission from Ng Jun Wei.
   const angState = { map: new Map() };
   const MAX_OMEGA_DEG_S = 900;   // clamp spikes
   const MAX_DTHETA_DEG = 45;     // clamp per-frame delta before dt division
+
+  // Kinetics-from-joint state
+  let kin = {
+    vMagF: null,
+    aMagF: null,
+    omegaF: null,
+    alphaF: null,
+    forceF: null,
+    momentF: null
+  };
 
   // Projectile tracking state
   const proj = {
@@ -539,6 +570,17 @@ without prior written permission from Ng Jun Wei.
     [KP.knee_R, KP.ankle_R],
   ];
 
+  // Segment mass fractions (rough anthropometric defaults)
+  const SEG_MASS_FRAC = {
+    upperArm: 0.028,   // each
+    forearm:  0.016,   // each
+    hand:     0.006,   // each
+    thigh:    0.105,   // each
+    shank:    0.0465,  // each
+    foot:     0.0145,  // each
+    trunk:    0.50
+  };
+
   // ======================
   // Helpers
   // ======================
@@ -551,15 +593,8 @@ without prior written permission from Ng Jun Wei.
   }
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
-  function clampScore(kp, thr=0.3) {
-    return kp && typeof kp.score === "number" && kp.score >= thr;
-  }
-
-  function midpoint(a,b) {
-    return { x:(a.x+b.x)/2, y:(a.y+b.y)/2, score: Math.min(a.score??0, b.score??0) };
-  }
-
+  function clampScore(kp, thr=0.3) { return kp && typeof kp.score === "number" && kp.score >= thr; }
+  function midpoint(a,b) { return { x:(a.x+b.x)/2, y:(a.y+b.y)/2, score: Math.min(a.score??0, b.score??0) }; }
   function deg(rad){ return rad * 180 / Math.PI; }
 
   function calcAngle(p1,p2,p3) {
@@ -569,9 +604,7 @@ without prior written permission from Ng Jun Wei.
     return a;
   }
 
-  function segmentAngleDeg(a, b) {
-    return deg(Math.atan2(b.y - a.y, b.x - a.x));
-  }
+  function segmentAngleDeg(a, b) { return deg(Math.atan2(b.y - a.y, b.x - a.x)); }
 
   function unwrapDeltaDeg(curr, prev) {
     let d = curr - prev;
@@ -582,7 +615,6 @@ without prior written permission from Ng Jun Wei.
   function vecSub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
   function vecMul(a,s){ return {x:a.x*s, y:a.y*s}; }
   function vecLen(a){ return Math.sqrt(a.x*a.x + a.y*a.y); }
-  function crossZ(a,b){ return a.x*b.y - a.y*b.x; }
 
   function drawText(text, x, y) {
     ctx.font = '14px system-ui, -apple-system, Segoe UI, Arial';
@@ -620,6 +652,22 @@ without prior written permission from Ng Jun Wei.
 
   function getCutoffHz() { return parseFloat(document.getElementById("cutoffHz").value); }
   function getWindowSec() { return parseInt(document.getElementById("windowSeconds").value, 10); }
+  function safeDt(dt){ return (dt && dt > 1e-4 && dt < 0.2) ? dt : null; }
+
+  function jointKey(joint, side){
+    return (joint === "neck") ? "neck" : `${joint}_${side}`;
+  }
+
+  function getSegmentForJoint(joint){
+    if (joint === "shoulder") return "upperArm";
+    if (joint === "elbow")    return "forearm";
+    if (joint === "wrist")    return "forearm";
+    if (joint === "hip")      return "thigh";
+    if (joint === "knee")     return "shank";
+    if (joint === "ankle")    return "shank";
+    if (joint === "neck")     return "trunk";
+    return null;
+  }
 
   // Confidence gate for segment-based angular velocity
   function segConfidenceOK(jointsPx, side, segKey) {
@@ -654,7 +702,6 @@ without prior written permission from Ng Jun Wei.
       showStatus("That metric is already selected.", "info");
       return;
     }
-
     selectedMetrics.push({ id, type, joint, side });
     renderMetricUI();
   }
@@ -791,12 +838,12 @@ without prior written permission from Ng Jun Wei.
     g.font = "12px system-ui, -apple-system, Segoe UI, Arial";
     g.fillText(`${maxV.toFixed(2)}`, 8, 14);
     g.fillText(`${minV.toFixed(2)}`, 8, h - 6);
-    g.fillText(yLabel, w - 90, 14);
+    g.fillText(yLabel, w - 70, 14);
   }
 
   let lastChartDrawT = 0;
   function throttleChartDraw(t) {
-    if (t - lastChartDrawT < 1/15) return;
+    if (t - lastChartDrawT < 1/15) return; // 15 fps draw
     lastChartDrawT = t;
     drawDualLineChart("chartForce", "forceRaw", "forceFilt", "N");
     drawDualLineChart("chartMoment", "momentRaw", "momentFilt", "N·m");
@@ -871,7 +918,6 @@ without prior written permission from Ng Jun Wei.
         await initializePoseDetection();
       }
 
-      // projectile model if needed
       const mode = document.getElementById("projMode").value;
       if (mode === "coco" || mode === "auto") await initializeCoco();
       ensureMotionTrackerInit();
@@ -881,12 +927,11 @@ without prior written permission from Ng Jun Wei.
       // reset states
       prevFrame = null;
       impulse_Ns = 0; angImpulse_Nms = 0; lastImpulseT = null;
-      filt.force = null; filt.moment = null; lastFilterT = null;
+
+      kin = { vMagF:null, aMagF:null, omegaF:null, alphaF:null, forceF:null, momentF:null };
+
       for (const k of Object.keys(chartSeries)) chartSeries[k] = [];
-
-      // clear angular smoothing state (important!)
       angState.map.clear();
-
       resetProjectileState();
 
       showStatus("Ready ✅", "success");
@@ -973,25 +1018,6 @@ without prior written permission from Ng Jun Wei.
       ankle_L: pick(KP.ankle_L),
       neck: neck ? {x:neck.x, y:neck.y, score: neck.score ?? 0.5} : null
     };
-  }
-
-  function computeCOMpx(jpx) {
-    const shR = jpx.shoulder_R, shL = jpx.shoulder_L;
-    const hpR = jpx.hip_R, hpL = jpx.hip_L;
-    const okSh = shR && shL;
-    const okHp = hpR && hpL;
-
-    if (okSh && okHp) {
-      const shMid = midpoint(shL, shR);
-      const hpMid = midpoint(hpL, hpR);
-      return { x: shMid.x*0.4 + hpMid.x*0.6, y: shMid.y*0.4 + hpMid.y*0.6 };
-    }
-    if (okHp) {
-      const hpMid = midpoint(hpL, hpR);
-      return { x: hpMid.x, y: hpMid.y };
-    }
-    if (hpR) return { x: hpR.x, y: hpR.y };
-    return null;
   }
 
   function computeAngles(jpx, side) {
@@ -1143,7 +1169,6 @@ without prior written permission from Ng Jun Wei.
     }
 
     proj.prevGray = gray;
-
     if (count < 120) return null;
 
     const cx = sumX / count;
@@ -1195,12 +1220,11 @@ without prior written permission from Ng Jun Wei.
     ctx.fill();
     drawText(`Projectile v ${proj.speed.toFixed(2)} m/s`, proj.px.x + 12, proj.px.y - 10);
 
-    document.getElementById("projInfo").textContent =
-      `Projectile: ${proj.speed.toFixed(2)} m/s`;
+    document.getElementById("projInfo").textContent = `Projectile: ${proj.speed.toFixed(2)} m/s`;
   }
 
   // ======================
-  // Selected metrics computation (stable ω)
+  // Selected metrics (stable ω)
   // ======================
   function computeSelectedMetricValues({dt, jointsPx, joints_m, angR, angL, segR, segL, prevFrame}) {
     const out = {};
@@ -1215,20 +1239,10 @@ without prior written permission from Ng Jun Wei.
         val = sideAngles[m.joint] ?? null;
 
       } else if (m.type === "angVel") {
-        // Stable angular velocity:
-        // filter segment angle θ first, then ω = dθ/dt; clamp + filter ω
         if (!prevFrame || !dt || dt <= 0.005 || dt > 0.08) {
           val = null;
         } else {
-          const map = {
-            shoulder: "upperArm",
-            elbow: "forearm",
-            wrist: "forearm",
-            hip: "thigh",
-            knee: "shank",
-            ankle: "shank",
-            neck: "trunk"
-          };
+          const map = { shoulder:"upperArm", elbow:"forearm", wrist:"forearm", hip:"thigh", knee:"shank", ankle:"shank", neck:"trunk" };
           const segKey = map[m.joint];
 
           if (!segConfidenceOK(jointsPx, m.side, segKey)) {
@@ -1265,10 +1279,11 @@ without prior written permission from Ng Jun Wei.
         }
 
       } else if (m.type === "linVel") {
-        if (!prevFrame || !dt || dt <= 1e-4 || dt > 0.2) val = null;
+        const dtSafe = safeDt(dt);
+        if (!prevFrame || !dtSafe) val = null;
         else {
-          const jointKey = (m.joint === "neck") ? "neck" : `${m.joint}_${m.side}`;
-          val = computeJointLinearVel_mps(joints_m, prevFrame.joints_m, dt, jointKey);
+          const key = jointKey(m.joint, m.side);
+          val = computeJointLinearVel_mps(joints_m, prevFrame.joints_m, dtSafe, key);
         }
       }
 
@@ -1288,13 +1303,108 @@ without prior written permission from Ng Jun Wei.
       const symbol = (m.type === "angle") ? "A" : (m.type === "angVel") ? "ω" : "v";
 
       let anchor = null;
-      if (m.joint === "neck") anchor = jointsPx.neck;
-      else anchor = jointsPx[`${m.joint}_${m.side}`];
+      anchor = (m.joint === "neck") ? jointsPx.neck : jointsPx[`${m.joint}_${m.side}`];
       if (!anchor) continue;
 
       drawText(`${m.joint.toUpperCase()}_${m.side} ${symbol} ${v.toFixed(2)} ${unit}`, anchor.x + 10, anchor.y + 18);
       count++;
     }
+  }
+
+  // ======================
+  // Joint-driven kinetics
+  // ======================
+  function computeKineticsFromSelectedJoint({t, dt, jointsPx, joints_m, segR, segL, mass}) {
+    const dtSafe = safeDt(dt);
+    if (!prevFrame || !dtSafe) return { forceMag: 0, moment: 0, driverLabel: "—" };
+
+    const joint = document.getElementById("kinJoint").value;
+    const side = document.getElementById("kinSide").value;
+
+    const key = jointKey(joint, side);
+    const j_m = joints_m[key];
+    const prevJ_m = prevFrame.joints_m ? prevFrame.joints_m[key] : null;
+    if (!j_m || !prevJ_m) return { forceMag: 0, moment: 0, driverLabel: `${joint.toUpperCase()}_${side} (no data)` };
+
+    // v (vector) and |v|
+    const v = vecMul(vecSub(j_m, prevJ_m), 1/dtSafe);
+    const vMag = vecLen(v);
+
+    // a (vector) and |a| using previous velocity
+    let aMag = 0;
+    const prevV = prevFrame.v_joint ? prevFrame.v_joint[key] : null;
+    if (prevV) {
+      const dv = vecSub(v, prevV);
+      const a = vecMul(dv, 1/dtSafe);
+      aMag = vecLen(a);
+    }
+
+    const fc = getCutoffHz();
+    kin.vMagF = lowPass(kin.vMagF, vMag, dtSafe, fc);
+    kin.aMagF = lowPass(kin.aMagF, aMag, dtSafe, fc);
+
+    const seg = getSegmentForJoint(joint);
+    const mEff = seg ? (SEG_MASS_FRAC[seg] * mass) : (0.10 * mass);
+    const Fraw = mEff * (kin.aMagF ?? 0);
+    kin.forceF = lowPass(kin.forceF, Fraw, dtSafe, fc);
+    const forceMag = kin.forceF ?? 0;
+
+    // Moment proxy = I * alpha (alpha from segment angle second derivative)
+    let moment = 0;
+    if (seg) {
+      const segAngles = (side === "R") ? segR : segL;
+      const segKeyMap = { upperArm:"upperArm", forearm:"forearm", thigh:"thigh", shank:"shank", trunk:"trunk" };
+      const segKey = segKeyMap[seg];
+
+      if (segKey && segAngles[segKey] != null) {
+        const theta = segAngles[segKey];
+        const prevTheta = prevFrame.segAngles ? prevFrame.segAngles[segKey] : null;
+
+        if (prevTheta != null) {
+          let dTheta = unwrapDeltaDeg(theta, prevTheta);
+          dTheta = clamp(dTheta, -MAX_DTHETA_DEG, MAX_DTHETA_DEG);
+          const omega = dTheta / dtSafe; // deg/s
+          kin.omegaF = lowPass(kin.omegaF, omega, dtSafe, Math.max(2, fc*0.6));
+
+          let alpha = 0;
+          if (prevFrame.omega != null) alpha = (kin.omegaF - prevFrame.omega) / dtSafe; // deg/s^2
+          kin.alphaF = lowPass(kin.alphaF, alpha, dtSafe, Math.max(2, fc*0.6));
+
+          // segment length L (m)
+          let L = 0.3; // fallback
+          if (seg === "upperArm") {
+            const a = joints_m[`shoulder_${side}`], b = joints_m[`elbow_${side}`];
+            if (a && b) L = vecLen(vecSub(b,a));
+          } else if (seg === "forearm") {
+            const a = joints_m[`elbow_${side}`], b = joints_m[`wrist_${side}`];
+            if (a && b) L = vecLen(vecSub(b,a));
+          } else if (seg === "thigh") {
+            const a = joints_m[`hip_${side}`], b = joints_m[`knee_${side}`];
+            if (a && b) L = vecLen(vecSub(b,a));
+          } else if (seg === "shank") {
+            const a = joints_m[`knee_${side}`], b = joints_m[`ankle_${side}`];
+            if (a && b) L = vecLen(vecSub(b,a));
+          } else if (seg === "trunk") {
+            const n = joints_m.neck, hl = joints_m.hip_L, hr = joints_m.hip_R;
+            if (n && hl && hr) {
+              const hm = { x:(hl.x+hr.x)/2, y:(hl.y+hr.y)/2 };
+              L = vecLen(vecSub(hm,n));
+            }
+          }
+
+          const mSeg = SEG_MASS_FRAC[seg] * mass;
+          const I = (1/12) * mSeg * L * L;
+
+          // convert alpha to rad/s^2
+          const alpha_rad = (kin.alphaF ?? 0) * (Math.PI/180);
+          const tauRaw = I * alpha_rad; // N·m
+          kin.momentF = lowPass(kin.momentF, tauRaw, dtSafe, fc);
+          moment = kin.momentF ?? 0;
+        }
+      }
+    }
+
+    return { forceMag, moment, driverLabel: `${joint.toUpperCase()}_${side}` };
   }
 
   // ======================
@@ -1313,18 +1423,15 @@ without prior written permission from Ng Jun Wei.
       const poses = await detector.estimatePoses(video);
       const t = performance.now() / 1000;
       const scale = pxToMetersScale();
+      const mass = currentParticipant ? currentParticipant.mass : 70;
 
       // Projectile update
       const projMode = document.getElementById("projMode").value;
       let projPos = null;
 
       if (projMode !== "off") {
-        if (projMode === "coco" || projMode === "auto") {
-          projPos = await detectProjectileCOCO(t);
-        }
-        if (!projPos && (projMode === "motion" || projMode === "auto")) {
-          projPos = trackProjectileMotion();
-        }
+        if (projMode === "coco" || projMode === "auto") projPos = await detectProjectileCOCO(t);
+        if (!projPos && (projMode === "motion" || projMode === "auto")) projPos = trackProjectileMotion();
         if (projPos) updateProjectileKinematics(t, projPos, scale);
       }
 
@@ -1337,15 +1444,6 @@ without prior written permission from Ng Jun Wei.
         drawOverlayAlways(kps, neck);
 
         const jointsPx = buildJointsPx(kps, neck);
-        const comPx = computeCOMpx(jointsPx);
-
-        if (comPx) {
-          ctx.beginPath();
-          ctx.arc(comPx.x, comPx.y, 7, 0, Math.PI*2);
-          ctx.fillStyle = "rgba(255,255,0,0.95)";
-          ctx.fill();
-          drawText("COM", comPx.x + 8, comPx.y - 8);
-        }
 
         // convert joints to meters
         const joints_m = {};
@@ -1353,71 +1451,56 @@ without prior written permission from Ng Jun Wei.
           const p = jointsPx[k];
           joints_m[k] = p ? { x: p.x * scale, y: p.y * scale } : null;
         }
-        const com_m = comPx ? { x: comPx.x * scale, y: comPx.y * scale } : null;
 
         const angR = computeAngles(jointsPx, "R");
         const angL = computeAngles(jointsPx, "L");
         const segR = computeSegmentAnglesForAngVel(jointsPx, "R");
         const segL = computeSegmentAnglesForAngVel(jointsPx, "L");
 
-        // kinetics from COM acceleration
-        let forceMag = 0;
-        let momentZ = 0;
-
-        const mass = currentParticipant ? currentParticipant.mass : 70;
-        let v_com = {x:0,y:0};
-
         const dt = prevFrame ? (t - prevFrame.t) : 0;
 
-        if (prevFrame && com_m && prevFrame.com_m && dt > 1e-4 && dt < 0.2) {
-          const d = vecSub(com_m, prevFrame.com_m);
-          v_com = vecMul(d, 1/dt);
-
-          const dv = vecSub(v_com, prevFrame.v_com || {x:0,y:0});
-          const a_com = vecMul(dv, 1/dt);
-
-          const F = { x: mass * a_com.x, y: mass * a_com.y };
-          forceMag = vecLen(F);
-
-          if (joints_m.hip_L && joints_m.hip_R) {
-            const hpMid_m = { x:(joints_m.hip_L.x + joints_m.hip_R.x)/2, y:(joints_m.hip_L.y + joints_m.hip_R.y)/2 };
-            const r = vecSub(hpMid_m, com_m);
-            momentZ = crossZ(r, F);
-          }
-
-          // impulses during recording
-          if (isRecording) {
-            if (lastImpulseT != null) {
-              const dtI = t - lastImpulseT;
-              if (dtI > 1e-4 && dtI < 0.2) {
-                impulse_Ns += forceMag * dtI;
-                angImpulse_Nms += momentZ * dtI;
-              }
+        // Build v_joint map for THIS frame (based on prevFrame)
+        const v_joint = {};
+        const dtSafeNow = safeDt(dt);
+        if (prevFrame && prevFrame.joints_m && dtSafeNow) {
+          for (const key of Object.keys(joints_m)) {
+            if (joints_m[key] && prevFrame.joints_m[key]) {
+              v_joint[key] = vecMul(vecSub(joints_m[key], prevFrame.joints_m[key]), 1/dtSafeNow);
             }
-            lastImpulseT = t;
           }
         }
 
-        // filtering for charts
-        let dtF = 0;
-        if (lastFilterT != null) dtF = t - lastFilterT;
-        lastFilterT = t;
+        // Kinetics from selected joint kinematics
+        const kinOut = computeKineticsFromSelectedJoint({
+          t, dt, jointsPx, joints_m, segR, segL, mass
+        });
 
-        const fc = getCutoffHz();
-        const fFilt = (dtF > 0) ? lowPass(filt.force, forceMag, dtF, fc) : forceMag;
-        const mFilt = (dtF > 0) ? lowPass(filt.moment, momentZ, dtF, fc) : momentZ;
-        filt.force = fFilt;
-        filt.moment = mFilt;
+        const forceMag = kinOut.forceMag;
+        const moment = kinOut.moment;
 
+        document.getElementById("lblForce").textContent = `${forceMag.toFixed(1)} N`;
+        document.getElementById("lblMoment").textContent = `${moment.toFixed(2)} N·m`;
+        document.getElementById("kinInfo").textContent = `Kinetics: ${kinOut.driverLabel}`;
+
+        // push to chart series (raw=filt here because kinetics already filtered in kin.*)
+        // still keep raw channels so the chart renders consistently
         pushSeries("forceRaw", t, forceMag);
-        pushSeries("forceFilt", t, fFilt);
-        pushSeries("momentRaw", t, momentZ);
-        pushSeries("momentFilt", t, mFilt);
-
-        document.getElementById("lblForce").textContent = `${fFilt.toFixed(1)} N`;
-        document.getElementById("lblMoment").textContent = `${mFilt.toFixed(2)} N·m`;
-
+        pushSeries("forceFilt", t, forceMag);
+        pushSeries("momentRaw", t, moment);
+        pushSeries("momentFilt", t, moment);
         throttleChartDraw(t);
+
+        // impulses during recording
+        if (isRecording) {
+          if (lastImpulseT != null) {
+            const dtI = t - lastImpulseT;
+            if (dtI > 1e-4 && dtI < 0.2) {
+              impulse_Ns += forceMag * dtI;
+              angImpulse_Nms += moment * dtI;
+            }
+          }
+          lastImpulseT = t;
+        }
 
         // Selected metrics
         const values = computeSelectedMetricValues({
@@ -1447,28 +1530,44 @@ without prior written permission from Ng Jun Wei.
             plane: document.getElementById("planeSelection").value,
             cutoffHz: getCutoffHz(),
 
-            forceRaw_N: forceMag,
-            forceFilt_N: fFilt,
-            momentRaw_Nm: momentZ,
-            momentFilt_Nm: mFilt,
+            // kinetics
+            force_N: forceMag,
+            moment_Nm: moment,
 
             impulse_Ns,
             angImpulse_Nms,
 
+            // projectile
             projectile_px: proj.px ? {x: proj.px.x, y: proj.px.y} : null,
             projectile_speed_mps: projMode !== "off" ? proj.speed : 0,
 
+            // selected metrics
             selected: values,
-            joints: jointsPx
+            joints: jointsPx,
+
+            // driver info
+            kineticsDriver: { joint: document.getElementById("kinJoint").value, side: document.getElementById("kinSide").value }
           });
         }
 
-        // prevFrame update
+        // update prevFrame
+        const kinJoint = document.getElementById("kinJoint").value;
+        const kinSide = document.getElementById("kinSide").value;
+        const seg = getSegmentForJoint(kinJoint);
+        const segAnglesForDriver = seg ? ((kinSide === "R") ? segR : segL) : null;
+
         prevFrame = {
-          t, joints_m, com_m, v_com,
+          t,
+          joints_m,
+          v_joint,
           segAnglesR: segR,
-          segAnglesL: segL
+          segAnglesL: segL,
+
+          // for moment computation (driver segment only)
+          segAngles: segAnglesForDriver,
+          omega: kin.omegaF
         };
+
       } else {
         if (projMode !== "off") drawProjectileOverlay();
       }
@@ -1497,8 +1596,9 @@ without prior written permission from Ng Jun Wei.
 
     impulse_Ns = 0; angImpulse_Nms = 0; lastImpulseT = null;
 
-    // reset angular smoothing on new recording
+    // reset smoothing on new recording
     angState.map.clear();
+    kin = { vMagF:null, aMagF:null, omegaF:null, alphaF:null, forceF:null, momentF:null };
 
     document.getElementById("recordBtn").disabled = true;
     document.getElementById("stopBtn").disabled = false;
@@ -1517,6 +1617,7 @@ without prior written permission from Ng Jun Wei.
         projMode: document.getElementById("projMode").value,
         projHint: document.getElementById("projClassHint").value,
         selectedMetrics: [...selectedMetrics],
+        kineticsDriver: { joint: document.getElementById("kinJoint").value, side: document.getElementById("kinSide").value },
         frames: recordingFrames
       });
       updateParticipantsList();
@@ -1586,7 +1687,7 @@ without prior written permission from Ng Jun Wei.
 
     const sel = document.getElementById("selectedParticipant");
     sel.innerHTML = `<option value="">Select a participant</option>` +
-      participants.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+      participants.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   }
 
   function removeParticipant(id) {
@@ -1624,9 +1725,10 @@ without prior written permission from Ng Jun Wei.
         rows.push(["Low-pass cutoff (Hz)", rec.cutoffHz]);
         rows.push(["Projectile Mode", rec.projMode]);
         rows.push(["Projectile Hint", rec.projHint]);
+        rows.push(["Kinetics Driver", `${rec.kineticsDriver?.joint?.toUpperCase() || "—"}_${rec.kineticsDriver?.side || "—"}`]);
 
-        const F = rec.frames.map(f => f.forceFilt_N ?? 0);
-        const M = rec.frames.map(f => f.momentFilt_Nm ?? 0);
+        const F = rec.frames.map(f => f.force_N ?? 0);
+        const M = rec.frames.map(f => f.moment_Nm ?? 0);
 
         const avgForce = avg(F);
         const avgMoment = avg(M);
@@ -1639,7 +1741,7 @@ without prior written permission from Ng Jun Wei.
         const maxProj = max(projSpeeds);
 
         rows.push(["Average Force (N)", Number(avgForce.toFixed(3))]);
-        rows.push(["Average Moment τz (N·m)", Number(avgMoment.toFixed(3))]);
+        rows.push(["Average Moment (N·m)", Number(avgMoment.toFixed(3))]);
         rows.push(["Total Impulse ∫|F|dt (N·s)", Number(finalImpulse.toFixed(3))]);
         rows.push(["Total Angular Impulse ∫τdt (N·m·s)", Number(finalAngImpulse.toFixed(3))]);
         rows.push(["Projectile Avg Speed (m/s)", Number(avgProj.toFixed(3))]);
@@ -1647,11 +1749,11 @@ without prior written permission from Ng Jun Wei.
 
         rows.push([]);
         rows.push(["Calculation Used"]);
-        rows.push(["Force", "|F| = m·|a_COM|"]);
+        rows.push(["Force (joint-driven proxy)", "|F| = m_eff · |a_joint|,  m_eff = segment_mass_fraction · body_mass"]);
         rows.push(["Impulse", "Impulse = Σ |F|·dt"]);
-        rows.push(["Moment", "τz = r × F (2D z-component), r = pelvis_mid - COM"]);
+        rows.push(["Moment (proxy)", "τ = I · α,  I = (1/12) m_seg L^2,  α from filtered segment angle"]);
         rows.push(["Angular Impulse", "Angular Impulse = Σ τ·dt"]);
-        rows.push(["Projectile Speed", "v = |Δx|/Δt, x in meters using scale = (height_m / video_px_height)"]);
+        rows.push(["Projectile Speed", "v = |Δx|/Δt (meters via scale = height_m / video_px_height)"]);
 
         rows.push([]);
         rows.push(["Selected Metrics"]);
@@ -1660,9 +1762,10 @@ without prior written permission from Ng Jun Wei.
 
         const header = [
           "Frame","t_ms","t_s","fpsDetected","plane",
-          "forceRaw_N","forceFilt_N","momentRaw_Nm","momentFilt_Nm",
+          "force_N","moment_Nm",
           "impulse_Ns","angImpulse_Nms",
           "projectile_x_px","projectile_y_px","projectile_speed_mps",
+          "kinDriver_joint","kinDriver_side",
           "selectedMetrics_JSON"
         ];
         rows.push(header);
@@ -1670,15 +1773,15 @@ without prior written permission from Ng Jun Wei.
         rec.frames.forEach((f, i) => {
           rows.push([
             i, f.t_ms, Number((f.t_s ?? 0).toFixed(4)), f.fpsDetected, f.plane,
-            Number((f.forceRaw_N ?? 0).toFixed(4)),
-            Number((f.forceFilt_N ?? 0).toFixed(4)),
-            Number((f.momentRaw_Nm ?? 0).toFixed(4)),
-            Number((f.momentFilt_Nm ?? 0).toFixed(4)),
+            Number((f.force_N ?? 0).toFixed(4)),
+            Number((f.moment_Nm ?? 0).toFixed(4)),
             Number((f.impulse_Ns ?? 0).toFixed(4)),
             Number((f.angImpulse_Nms ?? 0).toFixed(4)),
             f.projectile_px ? Number(f.projectile_px.x.toFixed(2)) : "N/A",
             f.projectile_px ? Number(f.projectile_px.y.toFixed(2)) : "N/A",
             Number((f.projectile_speed_mps ?? 0).toFixed(4)),
+            f.kineticsDriver?.joint || "",
+            f.kineticsDriver?.side || "",
             JSON.stringify(f.selected || {})
           ]);
         });
@@ -1698,7 +1801,7 @@ without prior written permission from Ng Jun Wei.
   window.addEventListener("load", () => {
     renderMetricUI();
     updateParticipantsList();
-    showStatus("Ready. Add participant → select metrics → Start Camera.", "info");
+    showStatus("Ready. Add participant → set kinetics driver → select metrics → Start Camera.", "info");
   });
 </script>
 </body>
