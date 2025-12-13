@@ -1,4 +1,4 @@
-# joint-kinematics-analysis
+# Mocap_sportmotion-analysis
 # 🏃‍♂️ Sport Performance Pose Estimation Analyzer
 
 A real-time biomechanics analysis tool for sports performance using AI-powered pose estimation. This application supports high-speed video capture (up to 240 FPS) and provides instant feedback on joint angles, linear kinematics, and angular velocities.
