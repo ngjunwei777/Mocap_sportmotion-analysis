@@ -444,6 +444,26 @@ without prior written permission from Ng Jun Wei.
 
         <!-- Mobile PiP toggle -->
         <button class="btn btn-primary pip-toggle" onclick="togglePiP()">📌 Pin Video (PiP)</button>
+
+        <div class="divider"></div>
+
+        <h3>Post Recording (Upload)</h3>
+        <div class="form-grid">
+          <div>
+            <label for="uploadFps">Assumed Upload FPS (iOS)</label>
+            <select id="uploadFps">
+              <option value="60" selected>60 FPS</option>
+              <option value="120">120 FPS</option>
+            </select>
+          </div>
+          <div>
+            <label for="videoUpload">Video File</label>
+            <input id="videoUpload" type="file" accept="video/*">
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="startUpload()">Load Uploaded Video</button>
+        <button class="btn btn-danger" onclick="stopUpload()">Unload Video</button>
+        <div class="mini">Upload iOS videos recorded at 60/120 fps for post-analysis.</div>
       </div>
 
       <!-- CARD 2: Display Selector (COLLAPSIBLE, MOVED UP) -->
@@ -591,12 +611,9 @@ without prior written permission from Ng Jun Wei.
   // ========= Collapsible UI =========
   function toggleCollapse(cardId) {
     const card = document.getElementById(cardId);
-    if (!card) return;
-    card.classList.toggle("collapsed");
-    const isCollapsed = card.classList.contains("collapsed");
-
-    const btn = card.querySelector(".collapse-btn");
+    const isCollapsed = card.classList.toggle("collapsed");
     const lbl = document.getElementById(cardId + "_lbl");
+    const btn = card.querySelector(".collapse-btn");
     if (btn) btn.setAttribute("aria-expanded", String(!isCollapsed));
     if (lbl) lbl.textContent = isCollapsed ? "Expand" : "Collapse";
   }
@@ -610,6 +627,9 @@ without prior written permission from Ng Jun Wei.
   let ctx = null;
   let animationId = null;
   let streamRef = null;
+  let usingUpload = false;
+  let uploadFps = 60;
+  let uploadUrl = null;
 
   let isRecording = false;
   let recordingFrames = [];
@@ -702,6 +722,19 @@ without prior written permission from Ng Jun Wei.
     el.textContent = message;
     el.style.display = 'block';
     setTimeout(() => { el.style.display = 'none'; }, 3200);
+  }
+
+  function stopActiveStream() {
+    if (streamRef) { streamRef.getTracks().forEach(t => t.stop()); streamRef = null; }
+  }
+
+  function resetSessionState() {
+    prevFrame = null;
+    impulse_Ns = 0; angImpulse_Nms = 0; lastImpulseT = null;
+    kin = { vMagF:null, aMagF:null, omegaF:null, alphaF:null, forceF:null, momentF:null };
+    for (const k of Object.keys(chartSeries)) chartSeries[k] = [];
+    angState.map.clear();
+    resetProjectileState();
   }
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -977,6 +1010,15 @@ without prior written permission from Ng Jun Wei.
       video.setAttribute("playsinline", "");
       video.muted = true;
       video.autoplay = true;
+      video.controls = false;
+      usingUpload = false;
+      uploadFps = 60;
+      if (uploadUrl) {
+        URL.revokeObjectURL(uploadUrl);
+        uploadUrl = null;
+        video.removeAttribute("src");
+        video.load();
+      }
 
       showStatus("Starting camera…", "info");
 
@@ -1020,12 +1062,7 @@ without prior written permission from Ng Jun Wei.
 
       document.getElementById("recordBtn").disabled = false;
 
-      prevFrame = null;
-      impulse_Ns = 0; angImpulse_Nms = 0; lastImpulseT = null;
-      kin = { vMagF:null, aMagF:null, omegaF:null, alphaF:null, forceF:null, momentF:null };
-      for (const k of Object.keys(chartSeries)) chartSeries[k] = [];
-      angState.map.clear();
-      resetProjectileState();
+      resetSessionState();
 
       ensurePiPOnMobileAuto();
 
@@ -1045,7 +1082,7 @@ without prior written permission from Ng Jun Wei.
     animationId = null;
 
     if (video) { video.pause(); video.srcObject = null; }
-    if (streamRef) { streamRef.getTracks().forEach(t => t.stop()); streamRef = null; }
+    stopActiveStream();
 
     document.getElementById("recordBtn").disabled = true;
     document.getElementById("stopBtn").disabled = true;
@@ -1054,6 +1091,92 @@ without prior written permission from Ng Jun Wei.
     currentParticipant = null;
 
     showStatus("Camera stopped.", "info");
+  }
+
+  async function startUpload() {
+    const fileInput = document.getElementById("videoUpload");
+    const file = fileInput.files && fileInput.files[0];
+    const fps = parseInt(document.getElementById("uploadFps").value, 10);
+
+    if (!file) { showStatus("Select a video file to upload.", "error"); return; }
+    if (![60, 120].includes(fps)) { showStatus("Upload FPS must be 60 or 120.", "error"); return; }
+
+    usingUpload = true;
+    uploadFps = fps;
+
+    if (animationId) cancelAnimationFrame(animationId);
+    animationId = null;
+
+    video = document.getElementById("video");
+    overlay = document.getElementById("overlay");
+    ctx = overlay.getContext("2d");
+
+    stopActiveStream();
+
+    if (uploadUrl) { URL.revokeObjectURL(uploadUrl); }
+    uploadUrl = URL.createObjectURL(file);
+
+    video.pause();
+    video.srcObject = null;
+    video.controls = true;
+    video.muted = true;
+    video.autoplay = false;
+    video.setAttribute("playsinline", "");
+    video.src = uploadUrl;
+
+    showStatus("Loading uploaded video…", "info");
+    await new Promise(res => (video.onloadedmetadata = () => res()));
+
+    resizeOverlayToVideo();
+    document.getElementById("negotiatedInfo").textContent =
+      `${video.videoWidth}×${video.videoHeight} • upload ${uploadFps}fps (assumed)`;
+
+    if (!detector) {
+      showStatus("Loading pose model…", "info");
+      await initializePoseDetection();
+    }
+
+    const mode = document.getElementById("projMode").value;
+    if (mode === "coco" || mode === "auto") await initializeCoco();
+    ensureMotionTrackerInit();
+
+    document.getElementById("recordBtn").disabled = false;
+
+    resetSessionState();
+
+    showStatus("Upload ready ✅ Press play to analyze.", "success");
+
+    video.play().catch(() => {
+      showStatus("Upload ready ✅ Press play to analyze.", "success");
+    });
+
+    if (animationId) cancelAnimationFrame(animationId);
+    loop();
+  }
+
+  function stopUpload() {
+    if (animationId) cancelAnimationFrame(animationId);
+    animationId = null;
+
+    if (video) {
+      video.pause();
+      if (uploadUrl) {
+        URL.revokeObjectURL(uploadUrl);
+        uploadUrl = null;
+      }
+      video.removeAttribute("src");
+      video.srcObject = null;
+      video.controls = false;
+      video.load();
+    }
+
+    usingUpload = false;
+
+    document.getElementById("recordBtn").disabled = true;
+    document.getElementById("stopBtn").disabled = true;
+    document.getElementById("negotiatedInfo").textContent = "—";
+
+    showStatus("Uploaded video cleared.", "info");
   }
 
   // ========= Overlay: always on =========
@@ -1108,242 +1231,78 @@ without prior written permission from Ng Jun Wei.
       knee_L: pick(KP.knee_L),
       ankle_R: pick(KP.ankle_R),
       ankle_L: pick(KP.ankle_L),
-      neck: neck ? {x:neck.x, y:neck.y, score: neck.score ?? 0.5} : null
+      neck
     };
   }
 
-  function computeAngles(jpx, side) {
+  // ========= Physics & Kinematics =========
+  function computeAngles(jointsPx, side) {
     const s = side;
-    const sh = jpx[`shoulder_${s}`], el = jpx[`elbow_${s}`], wr = jpx[`wrist_${s}`];
-    const hp = jpx[`hip_${s}`], kn = jpx[`knee_${s}`], an = jpx[`ankle_${s}`];
-    const neck = jpx.neck;
-
-    const out = { shoulder:null, elbow:null, wrist:null, hip:null, knee:null, ankle:null, neck:null };
-
-    if (el && sh && hp) out.shoulder = calcAngle(el, sh, hp);
-    if (sh && el && wr) out.elbow = calcAngle(sh, el, wr);
-
-    if (el && wr) {
-      const a = Math.abs(segmentAngleDeg(el, wr));
-      out.wrist = a > 180 ? 360 - a : a;
+    const a = jointsPx;
+    const ang = {};
+    if (a[`shoulder_${s}`] && a[`elbow_${s}`] && a[`wrist_${s}`]) {
+      ang.elbow = calcAngle(a[`shoulder_${s}`], a[`elbow_${s}`], a[`wrist_${s}`]);
     }
-
-    if (sh && hp && kn) out.hip = calcAngle(sh, hp, kn);
-    if (hp && kn && an) out.knee = calcAngle(hp, kn, an);
-
-    if (kn && an) {
-      const a = Math.abs(segmentAngleDeg(kn, an));
-      out.ankle = a > 180 ? 360 - a : a;
+    if (a[`hip_${s}`] && a[`knee_${s}`] && a[`ankle_${s}`]) {
+      ang.knee = calcAngle(a[`hip_${s}`], a[`knee_${s}`], a[`ankle_${s}`]);
     }
-
-    if (neck && jpx.hip_L && jpx.hip_R) {
-      const hpMid = midpoint(jpx.hip_L, jpx.hip_R);
-      const torso = { x: hpMid.x - neck.x, y: hpMid.y - neck.y };
-      const ang = Math.abs(deg(Math.atan2(torso.x, torso.y)));
-      out.neck = ang;
+    if (a[`shoulder_${s}`] && a[`hip_${s}`] && a[`knee_${s}`]) {
+      ang.hip = calcAngle(a[`shoulder_${s}`], a[`hip_${s}`], a[`knee_${s}`]);
     }
+    return ang;
+  }
 
+  function computeSegmentAnglesForAngVel(jointsPx, side) {
+    const s = side;
+    const j = jointsPx;
+    const out = {};
+    if (j[`shoulder_${s}`] && j[`elbow_${s}`]) out.upperArm = segmentAngleDeg(j[`shoulder_${s}`], j[`elbow_${s}`]);
+    if (j[`elbow_${s}`] && j[`wrist_${s}`]) out.forearm = segmentAngleDeg(j[`elbow_${s}`], j[`wrist_${s}`]);
+    if (j[`hip_${s}`] && j[`knee_${s}`]) out.thigh = segmentAngleDeg(j[`hip_${s}`], j[`knee_${s}`]);
+    if (j[`knee_${s}`] && j[`ankle_${s}`]) out.shank = segmentAngleDeg(j[`knee_${s}`], j[`ankle_${s}`]);
+    if (j.neck && j[`hip_${s}`]) out.trunk = segmentAngleDeg(j.neck, j[`hip_${s}`]);
     return out;
   }
 
-  function computeSegmentAnglesForAngVel(jpx, side) {
-    const s = side;
-    const sh = jpx[`shoulder_${s}`], el = jpx[`elbow_${s}`], wr = jpx[`wrist_${s}`];
-    const hp = jpx[`hip_${s}`], kn = jpx[`knee_${s}`], an = jpx[`ankle_${s}`];
-    const neck = jpx.neck;
-
-    return {
-      upperArm: (sh && el) ? segmentAngleDeg(sh, el) : null,
-      forearm:  (el && wr) ? segmentAngleDeg(el, wr) : null,
-      thigh:    (hp && kn) ? segmentAngleDeg(hp, kn) : null,
-      shank:    (kn && an) ? segmentAngleDeg(kn, an) : null,
-      trunk:    (neck && jpx.hip_L && jpx.hip_R) ? segmentAngleDeg(neck, midpoint(jpx.hip_L, jpx.hip_R)) : null
-    };
+  function computeJointLinearVel_mps(joints_m, prev_joints_m, dt, key) {
+    if (!joints_m[key] || !prev_joints_m[key]) return null;
+    const dv = vecSub(joints_m[key], prev_joints_m[key]);
+    return vecLen(vecMul(dv, 1/dt));
   }
 
-  function computeJointLinearVel_mps(joints_m, prevJoints_m, dt, key) {
-    const a = joints_m[key], b = prevJoints_m[key];
-    if (!a || !b || dt <= 0) return null;
-    const v = vecMul(vecSub(a,b), 1/dt);
-    return vecLen(v);
-  }
-
-  // ========= Projectile tracking =========
-  function resetProjectileState() {
-    proj.px = null; proj.m_prev = null; proj.t_prev = null;
-    proj.speed = 0; proj.trail = []; proj.lastDetectT = 0; proj.prevGray = null;
-    document.getElementById("projInfo").textContent = "Projectile: —";
-  }
-
-  function ensureMotionTrackerInit() {
-    if (proj.motionCanvas) return;
-    proj.motionCanvas = document.createElement("canvas");
-    proj.motionCtx = proj.motionCanvas.getContext("2d", { willReadFrequently: true });
-  }
-
-  async function detectProjectileCOCO(t) {
-    if (!cocoModel) return null;
-    if (t - proj.lastDetectT < 0.2) return null;
-    proj.lastDetectT = t;
-
-    const preds = await cocoModel.detect(video);
-    if (!preds || !preds.length) return null;
-
-    const hint = document.getElementById("projClassHint").value;
-    let cand = preds;
-
-    if (hint !== "any") cand = preds.filter(p => p.class === hint);
-    if (!cand.length) cand = preds;
-
-    let best = null, bestScore = -Infinity;
-    for (const p of cand) {
-      const [x,y,w,h] = p.bbox;
-      const score = (p.score ?? 0) * Math.sqrt(Math.max(1, w*h));
-      if (score > bestScore) { bestScore = score; best = p; }
-    }
-    if (!best || best.score < 0.35) return null;
-
-    const [x,y,w,h] = best.bbox;
-    return { x: x + w/2, y: y + h/2 };
-  }
-
-  function trackProjectileMotion() {
-    ensureMotionTrackerInit();
-    const mc = proj.motionCanvas;
-    const mctx = proj.motionCtx;
-
-    const w = video.videoWidth || 0;
-    const h = video.videoHeight || 0;
-    if (!w || !h) return null;
-
-    const dw = 320;
-    const dh = Math.round((h / w) * dw);
-    mc.width = dw;
-    mc.height = dh;
-
-    mctx.drawImage(video, 0, 0, dw, dh);
-    const img = mctx.getImageData(0, 0, dw, dh);
-    const data = img.data;
-
-    const gray = new Uint8Array(dw * dh);
-    for (let i=0, j=0; i<data.length; i+=4, j++){
-      const r=data[i], g=data[i+1], b=data[i+2];
-      gray[j] = (0.299*r + 0.587*g + 0.114*b) | 0;
-    }
-
-    if (!proj.prevGray) { proj.prevGray = gray; return null; }
-
-    const thr = 22;
-    let sumX=0, sumY=0, count=0;
-    for (let y=0; y<dh; y++){
-      const row = y*dw;
-      for (let x=0; x<dw; x++){
-        const idx = row + x;
-        const d = Math.abs(gray[idx] - proj.prevGray[idx]);
-        if (d > thr) { sumX += x; sumY += y; count++; }
-      }
-    }
-    proj.prevGray = gray;
-    if (count < 120) return null;
-
-    const cx = sumX / count;
-    const cy = sumY / count;
-
-    const px = cx * (w / dw);
-    const py = cy * (h / dh);
-    return { x: px, y: py };
-  }
-
-  function updateProjectileKinematics(t, posPx, scale_m_per_px) {
-    if (!posPx) return;
-
-    const maxTrail = parseInt(document.getElementById("projTrail").value, 10);
-    proj.trail.push({x: posPx.x, y: posPx.y});
-    while (proj.trail.length > maxTrail) proj.trail.shift();
-
-    const m = { x: posPx.x * scale_m_per_px, y: posPx.y * scale_m_per_px };
-
-    if (proj.m_prev && proj.t_prev != null) {
-      const dt = t - proj.t_prev;
-      if (dt > 1e-4 && dt < 0.5) {
-        const v = vecMul(vecSub(m, proj.m_prev), 1/dt);
-        proj.speed = vecLen(v);
-      }
-    }
-
-    proj.px = posPx;
-    proj.m_prev = m;
-    proj.t_prev = t;
-  }
-
-  function drawProjectileOverlay() {
-    if (!proj.px) return;
-
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,255,0.65)";
-    ctx.beginPath();
-    for (let i=0; i<proj.trail.length; i++){
-      const p = proj.trail[i];
-      if (i===0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    }
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(proj.px.x, proj.px.y, 8, 0, Math.PI*2);
-    ctx.fillStyle = "rgba(255, 165, 0, 0.95)";
-    ctx.fill();
-
-    drawText(`Projectile v ${proj.speed.toFixed(2)} m/s`, proj.px.x + 12, proj.px.y - 10);
-    document.getElementById("projInfo").textContent = `Projectile: ${proj.speed.toFixed(2)} m/s`;
-  }
-
-  // ========= Selected metrics computation =========
-  function computeSelectedMetricValues({dt, jointsPx, joints_m, angR, angL, segR, segL, prevFrame}) {
+  function computeSelectedMetricValues({ dt, jointsPx, joints_m, angR, angL, segR, segL, prevFrame }) {
     const out = {};
     for (const m of selectedMetrics) {
-      const side = m.side;
-      const sideAngles = (side === "R") ? angR : angL;
-      const sideSeg = (side === "R") ? segR : segL;
-
       let val = null;
 
       if (m.type === "angle") {
-        val = sideAngles[m.joint] ?? null;
+        const angs = (m.side === "R") ? angR : angL;
+        val = angs[m.joint] ?? null;
 
       } else if (m.type === "angVel") {
-        if (!prevFrame || !dt || dt <= 0.005 || dt > 0.08) {
-          val = null;
-        } else {
-          const map = { shoulder:"upperArm", elbow:"forearm", wrist:"forearm", hip:"thigh", knee:"shank", ankle:"shank", neck:"trunk" };
-          const segKey = map[m.joint];
-
-          if (!segConfidenceOK(jointsPx, m.side, segKey)) {
+        const dtSafe = safeDt(dt);
+        if (!prevFrame || !dtSafe) val = null;
+        else {
+          const key = jointKey(m.joint, m.side);
+          if (m.joint === "neck") {
             val = null;
           } else {
-            const currTheta = sideSeg[segKey];
-            const prevTheta = (side === "R")
-              ? (prevFrame.segAnglesR ? prevFrame.segAnglesR[segKey] : null)
-              : (prevFrame.segAnglesL ? prevFrame.segAnglesL[segKey] : null);
+            const segKeyMap = { shoulder:"upperArm", elbow:"forearm", wrist:"forearm", hip:"thigh", knee:"shank", ankle:"shank" };
+            const segKey = segKeyMap[m.joint];
+            const segAngles = (m.side === "R") ? segR : segL;
 
-            if (currTheta == null || prevTheta == null) {
-              val = null;
-            } else {
-              let dTheta = unwrapDeltaDeg(currTheta, prevTheta);
+            if (segKey && segAngles[segKey] != null && prevFrame.segAngles && prevFrame.segAngles[segKey] != null) {
+              let dTheta = unwrapDeltaDeg(segAngles[segKey], prevFrame.segAngles[segKey]);
               dTheta = clamp(dTheta, -MAX_DTHETA_DEG, MAX_DTHETA_DEG);
-
-              const st = angState.map.get(m.id) || { prevThetaF: null, omegaF: null };
-              const fcTheta = getCutoffHz();
-
-              const thetaPred = (st.prevThetaF == null) ? currTheta : (st.prevThetaF + dTheta);
-              const thetaF = lowPass(st.prevThetaF, thetaPred, dt, fcTheta);
-
-              let omega = 0;
-              if (st.prevThetaF != null) omega = (thetaF - st.prevThetaF) / dt;
+              let omega = dTheta / dtSafe;
               omega = clamp(omega, -MAX_OMEGA_DEG_S, MAX_OMEGA_DEG_S);
 
+              const st = angState.map.get(m.id) || { prevThetaF: null, omegaF: null };
+              const fcTheta = Math.max(2, getCutoffHz() * 0.6);
+              const thetaF = lowPass(st.prevThetaF, segAngles[segKey], dtSafe, fcTheta);
+
               const fcOmega = Math.max(2, fcTheta * 0.6);
-              const omegaF = lowPass(st.omegaF, omega, dt, fcOmega);
+              const omegaF = lowPass(st.omegaF, omega, dtSafe, fcOmega);
 
               angState.map.set(m.id, { prevThetaF: thetaF, omegaF });
               val = omegaF;
@@ -1486,7 +1445,7 @@ without prior written permission from Ng Jun Wei.
       ctx.clearRect(0,0,overlay.width, overlay.height);
 
       const poses = await detector.estimatePoses(video);
-      const t = performance.now() / 1000;
+      const t = usingUpload ? (video.currentTime || 0) : (performance.now() / 1000);
       const scale = pxToMetersScale();
       const mass = currentParticipant ? currentParticipant.mass : 70;
 
@@ -1582,7 +1541,7 @@ without prior written permission from Ng Jun Wei.
           recordingFrames.push({
             t_ms: Date.now(),
             t_s: t,
-            fpsDetected: detectedFPS,
+            fpsDetected: usingUpload ? uploadFps : detectedFPS,
             plane: document.getElementById("planeSelection").value,
             cutoffHz: getCutoffHz(),
             force_N: forceMag,
@@ -1651,7 +1610,7 @@ without prior written permission from Ng Jun Wei.
     if (isRecording && currentParticipant && recordingFrames.length) {
       currentParticipant.recordings.push({
         timestamp: new Date().toISOString(),
-        fpsDetected: detectedFPS,
+        fpsDetected: usingUpload ? uploadFps : detectedFPS,
         plane: document.getElementById("planeSelection").value,
         cutoffHz: getCutoffHz(),
         windowSec: getWindowSec(),
