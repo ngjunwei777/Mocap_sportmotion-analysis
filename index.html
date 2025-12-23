@@ -785,6 +785,10 @@ without prior written permission from Ng Jun Wei.
   }
 
   function updateFPS() {
+    if (usingUpload) {
+      document.getElementById('fpsIndicator').textContent = `FPS: ${uploadFps} (assumed)`;
+      return;
+    }
     frameCount++;
     const now = Date.now();
     if (now - lastFPSUpdate >= 1000) {
@@ -1123,6 +1127,11 @@ without prior written permission from Ng Jun Wei.
     video.autoplay = false;
     video.setAttribute("playsinline", "");
     video.src = uploadUrl;
+    video.onended = () => {
+      if (!usingUpload) return;
+      if (isRecording) stopRecording();
+      showStatus("Upload playback ended.", "info");
+    };
 
     showStatus("Loading uploaded video…", "info");
     await new Promise(res => (video.onloadedmetadata = () => res()));
@@ -1160,6 +1169,7 @@ without prior written permission from Ng Jun Wei.
 
     if (video) {
       video.pause();
+      video.onended = null;
       if (uploadUrl) {
         URL.revokeObjectURL(uploadUrl);
         uploadUrl = null;
@@ -1437,6 +1447,12 @@ without prior written permission from Ng Jun Wei.
   async function loop() {
     try {
       if (!video || video.readyState < 2 || !detector) {
+        animationId = requestAnimationFrame(loop);
+        return;
+      }
+
+      if (usingUpload && video.ended) {
+        updateFPS();
         animationId = requestAnimationFrame(loop);
         return;
       }
