@@ -127,6 +127,7 @@
       gap:6px;
       align-items:flex-end;
       max-width: 95%;
+      white-space: pre-line;
     }
     .hud small{ font-weight: 850; opacity: .92; }
     .divider{ height:1px; background:#e9e9e9; margin: 12px 0; }
@@ -258,7 +259,7 @@
 <body>
 <div class="container">
   <h1>🏃‍♂️ Movement Kinetics Lab</h1>
-  <p class="subtitle">iOS-safe overlay • selectable kinematics • joint-driven Force–Time & Moment–Time • projectile tracking • 4-tab XLSX export</p>
+  <p class="subtitle">iOS-safe overlay • selectable kinematics • low-pass Force–Time & Moment–Time • projectile tracking • simplified XLSX (phases + summary)</p>
 
   <div id="statusMessage" class="status-message"></div>
 
@@ -287,7 +288,7 @@
 
         <div class="divider"></div>
 
-        <h3>Input Source (Merged)</h3>
+        <h3>Input Source</h3>
         <div class="form-grid">
           <div>
             <label>Source</label>
@@ -314,8 +315,8 @@
             <select id="windowSeconds"><option value="5">5s</option><option value="10" selected>10s</option></select>
           </div>
           <div>
-             <label>Smoothing (Hz)</label>
-             <select id="cutoffHz"><option value="4">4</option><option value="6" selected>6</option><option value="12">12</option></select>
+             <label>Low-pass cutoff (Hz)</label>
+             <select id="cutoffHz"><option value="3">3</option><option value="4">4</option><option value="6" selected>6</option><option value="10">10</option><option value="12">12</option></select>
           </div>
         </div>
 
@@ -374,8 +375,7 @@
           </div>
         </div>
         <p class="mini">
-          Notes: Small/fast balls can be missed by COCO-SSD depending on resolution and shutter blur.
-          Best results: bright lighting, 1080p or higher, keep the ball big in frame.
+          COCO-SSD uses generic classes (e.g., “sports ball”). For small/fast balls, use bright lighting and keep the ball large in frame.
         </p>
 
         <div class="divider"></div>
@@ -395,7 +395,10 @@
             <select id="kinSide"><option value="R">Right</option><option value="L">Left</option></select>
           </div>
         </div>
-        <p class="mini">Joint-driven kinetics proxies: Linear Force via F=ma and Moment via τ=Iα (simplified). Use for trend/relative comparisons, not lab-grade force plates.</p>
+        <p class="mini">
+          Force–Time uses low-pass filtered output for a clean graph. Moment–Time = “angular force” proxy (τ = Iα, simplified).
+          Use for trends, not lab-grade force plates.
+        </p>
       </div>
 
       <div class="card collapsible-card" id="displaySelectorCard" style="margin-top:12px;">
@@ -449,18 +452,18 @@
         <h3>Real-time Charts</h3>
         <div class="charts-grid">
           <div class="chart-card">
-            <div class="chart-title"><b>Force–Time (N)</b><span id="lblForce">0 N</span></div>
+            <div class="chart-title"><b>Force–Time (filtered, N)</b><span id="lblForce">0 N</span></div>
             <canvas id="chartForce" class="chart"></canvas>
           </div>
           <div class="chart-card">
-            <div class="chart-title"><b>Moment–Time (Nm)</b><span id="lblMoment">0 Nm</span></div>
+            <div class="chart-title"><b>Moment–Time (filtered, Nm)</b><span id="lblMoment">0 Nm</span></div>
             <canvas id="chartMoment" class="chart"></canvas>
           </div>
         </div>
       </div>
 
       <div class="card" style="margin-top:12px;">
-        <button class="btn btn-primary" onclick="downloadData()">📊 Download All Data (XLSX • 4 tabs)</button>
+        <button class="btn btn-primary" onclick="downloadData()">📊 Download XLSX (Profile • Kinematics Summary by Phase • Kinetics Force/Moment Time • Technical Model)</button>
       </div>
     </div>
 
@@ -477,8 +480,8 @@
           </div>
         </div>
         <p class="mini">
-          General warnings: 2D pose has depth ambiguity; fast motion blur reduces accuracy; ankle/wrist keypoints can drop in occlusion.
-          For best results: tripod, stable framing, strong lighting, minimal background clutter.
+          Warnings: 2D pose has depth ambiguity; fast motion blur reduces keypoint confidence; ankle/wrist can drop under occlusion.
+          For best results: tripod, stable framing, strong lighting, minimal clutter.
         </p>
       </div>
     </div>
@@ -500,30 +503,48 @@ let participants = [];
 let currentParticipant = null;
 
 let isRecording = false;
-let recordingFrames = [];   // per-frame: time + kinematics + projectile + keypoints(if needed)
-let kineticsSeries = [];    // per-frame: time + force/moment raw/filt
-let sessionMeta = {};       // source/fps request etc.
 
+// Store ONLY what we need (simplified export requirement):
+// - Kinematics series: driver joint linear velocity, driver joint angular velocity, driver joint angle, driver joint displacement
+// - Also keep selected metrics live display (optional) but export is simplified.
+let rec = {
+  t: [],                // seconds
+  driverLinVel: [],     // m/s
+  driverAngVel: [],     // deg/s
+  driverAngle: [],      // deg
+  driverDisp: [],       // m (cumulative displacement magnitude) OR net displacement? We'll do cumulative path length.
+  forceFilt: [],        // N
+  momentFilt: [],       // Nm ("angular force")
+  projSpeed: [],        // m/s (optional)
+  projValid: []         // 0/1
+};
+
+let sessionMeta = {};
 let prevFrameTS = 0;
 let prevKeypoints = null;
-let prevAngleMap = new Map(); // metricId -> prevAngleDeg
-let prevProj = null;          // previous projectile state for velocity
-let lastProjectiles = [];     // persist across frames
+let frameIndex = 0;
+
+// For stable angles/velocities
+let prevAngleDriver = null;
+let prevDriverPos = null;
+let cumDisp = 0;
+
+// Projectile tracking state
+let prevProj = null;
+let lastProjectiles = [];
 
 // FPS estimate
 let detectedFPS = 0;
 let framesInSecond = 0;
 let lastFPSUpdate = performance.now();
 
-// Selected metrics (UI)
+// Selected metrics (UI display only; export is simplified by requirement)
 let selectedMetrics = [];
+let prevAngleMap = new Map(); // metricId -> prev angle
 
 // Charts time windowed
-const chartSeries = { forceRaw:[], forceFilt:[], momentRaw:[], momentFilt:[] };
+const chartSeries = { forceFilt:[], momentFilt:[] };
 let lastChartDraw = 0;
-
-// COCO detection pacing
-let frameIndex = 0; // monotonic (do NOT reset, fixes projectile tracking pacing)
 
 // Pose keypoints indices (MoveNet)
 const KP = {
@@ -532,7 +553,6 @@ const KP = {
   hip_L:11, hip_R:12, knee_L:13, knee_R:14, ankle_L:15, ankle_R:16
 };
 
-// Skeleton lines for overlay
 const SKELETON = [
   [5,6],[5,7],[7,9],[6,8],[8,10],[5,11],[6,12],[11,12],[11,13],[13,15],[12,14],[14,16]
 ];
@@ -562,25 +582,20 @@ window.onload = async () => {
   showStatus("Loading Neural Networks...", "info");
   try {
     await tf.ready();
-
-    // iOS Safari tends to be happiest with WebGL
-    // (prevents the common "webgpu not initialized" style backend issues)
-    try {
-      await tf.setBackend('webgl');
-      await tf.ready();
-    } catch(_) {}
+    // iOS Safari: prefer webgl
+    try { await tf.setBackend('webgl'); await tf.ready(); } catch(_) {}
 
     detector = await poseDetection.createDetector(
       poseDetection.SupportedModels.MoveNet,
       { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
     );
-
     cocoModel = await cocoSsd.load();
+
     showStatus("Models Ready. Start Camera or Upload.", "success");
     setStatusText("Models ready");
   } catch(e) {
     console.error(e);
-    showStatus("Error loading models. Try reloading the page.", "error");
+    showStatus("Error loading models. Try reloading.", "error");
     setStatusText("Model load error");
   }
 };
@@ -606,7 +621,6 @@ function addParticipant(silent=false) {
   if(existing) Object.assign(existing, profile);
   else participants.push(profile);
 
-  // refresh dropdown
   const sel = document.getElementById('selectedParticipant');
   sel.innerHTML = "";
   participants.forEach(p => {
@@ -628,12 +642,12 @@ function onParticipantChange() {
 }
 
 /* =========================================================
-   Input Source (merged camera + upload)
+   Input Source
 ========================================================= */
 async function startInput() {
   if(!detector) return showStatus("Wait for models to load.", "error");
 
-  stopActive(); // clear any prior loop/stream
+  stopActive();
   resetSessionState();
 
   const src = document.getElementById('inputSource').value;
@@ -647,11 +661,8 @@ async function startInput() {
     startedAt: new Date().toISOString()
   };
 
-  if(src === "camera") {
-    await startCameraInternal(fpsReq, facing);
-  } else {
-    await startUploadInternal();
-  }
+  if(src === "camera") await startCameraInternal(fpsReq, facing);
+  else await startUploadInternal();
 }
 
 async function startCameraInternal(fpsReq, facing) {
@@ -678,7 +689,6 @@ async function startCameraInternal(fpsReq, facing) {
       overlay.width = video.videoWidth || 1280;
       overlay.height = video.videoHeight || 720;
 
-      // Mirror front cam
       if(facing === 'user') {
         video.style.transform = "scaleX(-1)";
         overlay.style.transform = "scaleX(-1)";
@@ -722,7 +732,6 @@ async function startUploadInternal() {
       overlay.width = video.videoWidth || 1280;
       overlay.height = video.videoHeight || 720;
 
-      // Upload is not mirrored
       video.style.transform = "none";
       overlay.style.transform = "none";
 
@@ -758,8 +767,7 @@ function stopActive() {
   try { video.pause(); } catch(_) {}
   video.srcObject = null;
 
-  // keep video.src if upload; but stopping should pause it
-  ctx && ctx.clearRect(0,0,overlay.width,overlay.height);
+  if(ctx) ctx.clearRect(0,0,overlay.width,overlay.height);
 }
 
 function enableRunButtons(running) {
@@ -769,17 +777,26 @@ function enableRunButtons(running) {
 
 function resetSessionState() {
   isRecording = false;
-  recordingFrames = [];
-  kineticsSeries = [];
+
+  rec = { t:[], driverLinVel:[], driverAngVel:[], driverAngle:[], driverDisp:[], forceFilt:[], momentFilt:[], projSpeed:[], projValid:[] };
+
   prevFrameTS = 0;
   prevKeypoints = null;
-  prevAngleMap.clear();
-  prevProj = null;
-  lastProjectiles = [];
   frameIndex = 0;
 
-  // reset chart buffers
-  Object.keys(chartSeries).forEach(k => chartSeries[k] = []);
+  prevAngleDriver = null;
+  prevDriverPos = null;
+  cumDisp = 0;
+
+  prevAngleMap.clear();
+
+  prevProj = null;
+  lastProjectiles = [];
+
+  chartSeries.forceFilt = [];
+  chartSeries.momentFilt = [];
+  lastChartDraw = 0;
+
   document.getElementById('lblForce').innerText = "0 N";
   document.getElementById('lblMoment').innerText = "0 Nm";
   document.getElementById('liveInterpretation').innerText = "—";
@@ -792,7 +809,7 @@ async function renderLoop(ts) {
   animationId = requestAnimationFrame(renderLoop);
   if(!video || video.paused || video.ended) return;
 
-  // FPS estimate
+  // FPS
   framesInSecond++;
   const nowPerf = performance.now();
   if(nowPerf - lastFPSUpdate >= 1000) {
@@ -804,20 +821,18 @@ async function renderLoop(ts) {
 
   frameIndex++;
 
-  // dt
   const tSec = (ts || performance.now()) / 1000;
-  const dt = prevFrameTS ? Math.max(1/240, Math.min(0.2, tSec - prevFrameTS)) : (1/60);
+  const dt = prevFrameTS ? clamp(tSec - prevFrameTS, 1/240, 0.2) : (1/60);
   prevFrameTS = tSec;
 
-  // Inference
+  // Pose
   let kp = null;
-
   try {
     const poses = await detector.estimatePoses(video, { flipHorizontal: false });
     if(poses && poses.length && poses[0].keypoints) kp = poses[0].keypoints;
   } catch(_) {}
 
-  // Projectile detect (persist lastProjectiles so drawing + recording still work between detection frames)
+  // Projectile
   const projMode = document.getElementById('projMode').value;
   if(projMode === "coco" && cocoModel) {
     const everyN = parseInt(document.getElementById('projEveryN').value);
@@ -826,12 +841,7 @@ async function renderLoop(ts) {
         const preds = await cocoModel.detect(video);
         const cls = document.getElementById('projClassHint').value;
         const minScore = parseFloat(document.getElementById('projMinScore').value);
-
-        // keep all matches; pick best for tracking
-        lastProjectiles = preds
-          .filter(p => p.class === cls && p.score >= minScore)
-          .sort((a,b)=>b.score-a.score)
-          .slice(0, 3);
+        lastProjectiles = preds.filter(p => p.class === cls && p.score >= minScore).sort((a,b)=>b.score-a.score).slice(0, 2);
       } catch(_) {}
     }
   } else {
@@ -840,41 +850,26 @@ async function renderLoop(ts) {
 
   // Draw
   ctx.clearRect(0,0,overlay.width, overlay.height);
+  if(kp) drawSkeleton(kp);
+  drawProjectile(lastProjectiles, dt);
+
+  // Kinematics display (selected metrics)
   if(kp) {
-    drawSkeleton(kp);
-  }
-  drawProjectile(lastProjectiles);
+    processSelectedMetrics(kp, dt);
+    const kin = processDriverKinematics(kp, dt);       // <- used for export + interpretation
+    const kinets = processDriverKinetics(kp, dt, tSec, kin); // <- low-pass filtered force/moment (clean graph)
 
-  // Kinematics + Kinetics
-  let kinematicSnapshot = null;
-  let kineticsSnapshot = null;
+    // Live interpretation
+    document.getElementById('liveInterpretation').innerText = buildLiveInterpretation(kin, kinets);
 
-  if(kp) {
-    // compute kinematics for selected metrics
-    kinematicSnapshot = computeSelectedKinematics(kp, dt);
-
-    // compute kinetics from driver joint
-    kineticsSnapshot = processKinetics(kp, dt, tSec);
-
-    // projectile tracking model (center + velocity)
-    const projState = computeProjectileState(lastProjectiles, dt);
-    if(kinematicSnapshot) kinematicSnapshot.projectile = projState;
-
-    // live interpretation text
-    document.getElementById('liveInterpretation').innerText =
-      buildLiveInterpretation(kinematicSnapshot, kineticsSnapshot);
-
-    // recording (merged for camera + upload)
-    if(isRecording) {
-      recordFrame(tSec, kp, kinematicSnapshot, kineticsSnapshot);
-    }
+    // Recording (simplified)
+    if(isRecording) recordSimplified(tSec, kin, kinets);
 
     prevKeypoints = kp;
   } else {
-    setStatusText("No pose detected (check framing/lighting)");
+    setStatusText("No pose detected (framing/lighting)");
   }
 
-  // chart updates
   throttleChartDraw(tSec);
 }
 
@@ -883,11 +878,20 @@ async function renderLoop(ts) {
 ========================================================= */
 function drawSkeleton(kp) {
   const minScore = 0.30;
-
-  // segments
   ctx.lineWidth = 3;
   ctx.strokeStyle = "#00ff66";
-  SKELETON.forEach(([i, j]) => {
+
+  const skeleton = [
+    [KP.shoulder_L, KP.shoulder_R],
+    [KP.shoulder_L, KP.elbow_L], [KP.elbow_L, KP.wrist_L],
+    [KP.shoulder_R, KP.elbow_R], [KP.elbow_R, KP.wrist_R],
+    [KP.shoulder_L, KP.hip_L], [KP.shoulder_R, KP.hip_R],
+    [KP.hip_L, KP.hip_R],
+    [KP.hip_L, KP.knee_L], [KP.knee_L, KP.ankle_L],
+    [KP.hip_R, KP.knee_R], [KP.knee_R, KP.ankle_R]
+  ];
+
+  skeleton.forEach(([i, j]) => {
     if(kp[i]?.score > minScore && kp[j]?.score > minScore) {
       ctx.beginPath();
       ctx.moveTo(kp[i].x, kp[i].y);
@@ -896,7 +900,6 @@ function drawSkeleton(kp) {
     }
   });
 
-  // joints
   kp.forEach(p => {
     if(p.score > minScore) {
       ctx.beginPath();
@@ -907,14 +910,15 @@ function drawSkeleton(kp) {
   });
 }
 
-function drawProjectile(projs) {
-  if(!projs || !projs.length) return;
+function drawProjectile(projs, dt) {
+  if(!projs || !projs.length) { prevProj = null; return; }
 
   ctx.save();
   ctx.lineWidth = 2;
   ctx.strokeStyle = "orange";
   ctx.fillStyle = "orange";
   ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+
   projs.forEach(p => {
     const [x,y,w,h] = p.bbox;
     ctx.strokeRect(x,y,w,h);
@@ -922,18 +926,18 @@ function drawProjectile(projs) {
     ctx.fillText(label, x, y > 18 ? y-6 : y+18);
   });
 
-  // draw tracked center + velocity vector if available
-  const proj = computeProjectileState(projs, 1/Math.max(1,detectedFPS));
-  if(proj && proj.valid) {
+  // tracked center + velocity arrow
+  const s = computeProjectileState(projs, dt);
+  if(s.valid) {
     ctx.beginPath();
-    ctx.arc(proj.cx, proj.cy, 6, 0, 2*Math.PI);
+    ctx.arc(s.cx, s.cy, 6, 0, 2*Math.PI);
     ctx.fill();
 
-    // velocity arrow
-    const scale = 0.15; // px per (m/s) approx visual
+    // velocity vector (scaled for visuals)
+    const pxScale = 0.15; // smaller -> longer arrow
     ctx.beginPath();
-    ctx.moveTo(proj.cx, proj.cy);
-    ctx.lineTo(proj.cx + proj.vx_mps/scale, proj.cy + proj.vy_mps/scale);
+    ctx.moveTo(s.cx, s.cy);
+    ctx.lineTo(s.cx + (s.vx_mps/pxScale), s.cy + (s.vy_mps/pxScale));
     ctx.stroke();
   }
 
@@ -941,66 +945,15 @@ function drawProjectile(projs) {
 }
 
 /* =========================================================
-   Kinematics
+   Helpers: scale / indices
 ========================================================= */
-function computeSelectedKinematics(kp, dt) {
-  const out = { values: {}, warnings: [] };
-
-  // compute each selected metric value
-  selectedMetrics.forEach(m => {
-    const v = computeMetricValue(kp, m, dt);
-    out.values[m.id] = v;
-    // update UI
-    const el = document.getElementById(`val_${m.id}`);
-    if(el) el.innerText = isFinite(v) ? v.toFixed(1) : "--";
-  });
-
-  // quality warning
-  const low = countLowConfidence(kp, 0.30);
-  if(low > 6) out.warnings.push("Many low-confidence keypoints (motion blur / occlusion).");
-
-  return out;
-}
-
-function computeMetricValue(kp, m, dt) {
-  const side = m.side;
-  if(m.type === "angle") {
-    const ang = getJointAngleDeg(kp, m.joint, side);
-    // store angle for angVel too (for stable export)
-    prevAngleMap.set(`lastAngle_${m.id}`, ang);
-    return ang;
-  }
-
-  if(m.type === "linVel") {
-    // linVel uses the joint point itself
-    const idx = getJointIndex(m.joint, side);
-    if(idx === null) return NaN;
-    return getLinearVelMps(kp, idx, dt);
-  }
-
-  if(m.type === "angVel") {
-    // angular velocity uses angle change over time
-    const ang = getJointAngleDeg(kp, m.joint, side);
-    const prev = prevAngleMap.get(m.id);
-    prevAngleMap.set(m.id, ang);
-
-    if(prev == null || !isFinite(prev) || !isFinite(ang)) return 0;
-
-    // unwrap (avoid jump at 0/360)
-    let d = ang - prev;
-    if(d > 180) d -= 360;
-    if(d < -180) d += 360;
-
-    const w = d / Math.max(1e-4, dt); // deg/s
-    return w;
-  }
-
-  return NaN;
+function getPxToMeter() {
+  const hM = currentParticipant ? (currentParticipant.height / 100) : 1.75;
+  const denom = Math.max(240, overlay.height * 0.80);
+  return hM / denom;
 }
 
 function getJointIndex(joint, side) {
-  // expects keys like shoulder_R, shoulder_L etc.
-  const key = `${joint}_${side}`;
   const map = {
     shoulder_R: KP.shoulder_R, shoulder_L: KP.shoulder_L,
     elbow_R: KP.elbow_R, elbow_L: KP.elbow_L,
@@ -1009,51 +962,69 @@ function getJointIndex(joint, side) {
     knee_R: KP.knee_R, knee_L: KP.knee_L,
     ankle_R: KP.ankle_R, ankle_L: KP.ankle_L
   };
+  const key = `${joint}_${side}`;
   return (key in map) ? map[key] : null;
 }
 
+/* =========================================================
+   Selected metrics: UI display only
+========================================================= */
+function processSelectedMetrics(kp, dt) {
+  selectedMetrics.forEach(m => {
+    const v = computeMetricValue(kp, m, dt);
+    const el = document.getElementById(`val_${m.id}`);
+    if(el) el.innerText = isFinite(v) ? v.toFixed(1) : "--";
+  });
+}
+
+function computeMetricValue(kp, m, dt) {
+  if(m.type === "angle") return getJointAngleDeg(kp, m.joint, m.side);
+  if(m.type === "linVel") {
+    const idx = getJointIndex(m.joint, m.side);
+    return idx == null ? NaN : getLinearVelMps(kp, idx, dt);
+  }
+  if(m.type === "angVel") {
+    const ang = getJointAngleDeg(kp, m.joint, m.side);
+    const prev = prevAngleMap.get(m.id);
+    prevAngleMap.set(m.id, ang);
+    if(prev == null || !isFinite(prev) || !isFinite(ang)) return 0;
+    let d = ang - prev;
+    if(d > 180) d -= 360;
+    if(d < -180) d += 360;
+    return d / Math.max(1e-4, dt);
+  }
+  return NaN;
+}
+
 function getJointAngleDeg(kp, joint, side) {
-  // angle at joint "b" formed by a-b-c
-  // NOTE: wrist angle is not well-defined without a hand keypoint. We proxy wrist angle using elbow-wrist-(wrist+forearm direction).
-  let aKey=null, bKey=null, cKey=null;
-
-  if(joint === "elbow")      { aKey=`shoulder_${side}`; bKey=`elbow_${side}`; cKey=`wrist_${side}`; }
-  else if(joint === "knee")  { aKey=`hip_${side}`;      bKey=`knee_${side}`;  cKey=`ankle_${side}`; }
-  else if(joint === "hip")   { aKey=`shoulder_${side}`; bKey=`hip_${side}`;   cKey=`knee_${side}`; }
-  else if(joint === "shoulder"){ aKey=`hip_${side}`;    bKey=`shoulder_${side}`; cKey=`elbow_${side}`; }
-  else if(joint === "ankle") { aKey=`knee_${side}`;     bKey=`ankle_${side}`; cKey=`ankle_${side}`; } // handled specially
-  else if(joint === "wrist") { aKey=`elbow_${side}`;     bKey=`wrist_${side}`; cKey=`wrist_${side}`; } // handled specially
-  else return NaN;
-
-  const pA = kp[getJointIndex(aKey.split("_")[0], aKey.split("_")[1])];
-  const pB = kp[getJointIndex(bKey.split("_")[0], bKey.split("_")[1])];
   const minScore = 0.30;
+  let a=null,b=null,c=null;
 
-  if(!pA || !pB || pA.score < minScore || pB.score < minScore) return NaN;
-
-  // Special proxy angles:
-  // - Wrist: use elbow->wrist vector vs horizontal right direction (gives "wrist flex/ext proxy" in 2D)
-  // - Ankle: use knee->ankle vector vs vertical axis (gives "ankle dorsiflex/plantarflex proxy" in 2D)
-  if(joint === "wrist") {
+  if(joint === "elbow")      { a=`shoulder_${side}`; b=`elbow_${side}`; c=`wrist_${side}`; }
+  else if(joint === "knee")  { a=`hip_${side}`;      b=`knee_${side}`;  c=`ankle_${side}`; }
+  else if(joint === "hip")   { a=`shoulder_${side}`; b=`hip_${side}`;   c=`knee_${side}`; }
+  else if(joint === "shoulder"){ a=`hip_${side}`;    b=`shoulder_${side}`; c=`elbow_${side}`; }
+  else if(joint === "wrist") { // proxy: elbow->wrist orientation
     const e = kp[getJointIndex("elbow", side)];
     const w = kp[getJointIndex("wrist", side)];
     if(!e || !w || e.score < minScore || w.score < minScore) return NaN;
-    const vx = w.x - e.x, vy = w.y - e.y;
-    const ang = Math.atan2(vy, vx) * 180/Math.PI; // degrees
-    return normalizeDeg(Math.abs(ang)); // proxy magnitude
+    const ang = Math.atan2(w.y - e.y, w.x - e.x) * 180/Math.PI;
+    return Math.abs(normalizeDeg(ang));
   }
-  if(joint === "ankle") {
+  else if(joint === "ankle") { // proxy: knee->ankle orientation vs vertical
     const k = kp[getJointIndex("knee", side)];
-    const a = kp[getJointIndex("ankle", side)];
-    if(!k || !a || k.score < minScore || a.score < minScore) return NaN;
-    const vx = a.x - k.x, vy = a.y - k.y;
-    // angle vs vertical axis
-    const ang = Math.atan2(vx, vy) * 180/Math.PI; // swap gives vs vertical
-    return normalizeDeg(Math.abs(ang));
+    const a2 = kp[getJointIndex("ankle", side)];
+    if(!k || !a2 || k.score < minScore || a2.score < minScore) return NaN;
+    const ang = Math.atan2(a2.x - k.x, a2.y - k.y) * 180/Math.PI;
+    return Math.abs(normalizeDeg(ang));
   }
+  else return NaN;
 
-  const pC = kp[getJointIndex(cKey.split("_")[0], cKey.split("_")[1])];
-  if(!pC || pC.score < minScore) return NaN;
+  const pA = kp[getJointIndex(a.split("_")[0], a.split("_")[1])];
+  const pB = kp[getJointIndex(b.split("_")[0], b.split("_")[1])];
+  const pC = kp[getJointIndex(c.split("_")[0], c.split("_")[1])];
+  if(!pA || !pB || !pC) return NaN;
+  if(pA.score < minScore || pB.score < minScore || pC.score < minScore) return NaN;
 
   const rad =
     Math.atan2(pC.y - pB.y, pC.x - pB.x) -
@@ -1070,190 +1041,129 @@ function normalizeDeg(d) {
   return x;
 }
 
-function getPxToMeter() {
-  // Simple scale: assume subject height ~ 0.80*video height (standing-ish)
-  // meters per pixel = (height_m) / (0.8 * pixelHeight)
-  const hM = currentParticipant ? (currentParticipant.height / 100) : 1.75;
-  const denom = Math.max(200, overlay.height * 0.80);
-  return hM / denom;
-}
-
 function getLinearVelMps(kp, idx, dt) {
   if(!prevKeypoints || !kp[idx] || !prevKeypoints[idx]) return 0;
   const curr = kp[idx], prev = prevKeypoints[idx];
   if(curr.score < 0.30 || prev.score < 0.30) return 0;
-
-  const distPx = Math.hypot(curr.x - prev.x, curr.y - prev.y);
   const scale = getPxToMeter();
-  return (distPx * scale) / Math.max(1e-4, dt);
-}
-
-function countLowConfidence(kp, thr) {
-  let n = 0;
-  kp.forEach(p => { if(!p || p.score < thr) n++; });
-  return n;
+  const dx = (curr.x - prev.x) * scale;
+  const dy = (curr.y - prev.y) * scale;
+  return Math.hypot(dx, dy) / Math.max(1e-4, dt);
 }
 
 /* =========================================================
-   Projectile tracking model (center + velocity + angle)
+   Driver kinematics (for simplified export + model)
 ========================================================= */
-function computeProjectileState(projs, dt) {
-  const state = {
-    valid:false, class:null, score:0,
-    cx:0, cy:0, w:0, h:0,
-    vx_mps:0, vy_mps:0, speed_mps:0,
-    angle_deg:0
-  };
-
-  if(!projs || !projs.length) {
-    prevProj = null;
-    return state;
-  }
-
-  const best = projs[0];
-  const [x,y,w,h] = best.bbox;
-  const cx = x + w/2;
-  const cy = y + h/2;
-
-  state.valid = true;
-  state.class = best.class;
-  state.score = best.score;
-  state.cx = cx; state.cy = cy; state.w = w; state.h = h;
-
-  // Velocity (m/s) based on px displacement + scale
-  const scale = getPxToMeter();
-  if(prevProj && prevProj.valid) {
-    const dx = cx - prevProj.cx;
-    const dy = cy - prevProj.cy;
-
-    const vx = (dx * scale) / Math.max(1e-4, dt);
-    const vy = (dy * scale) / Math.max(1e-4, dt);
-
-    // mild smoothing for stability
-    const a = 0.35;
-    state.vx_mps = a*vx + (1-a)*(prevProj.vx_mps || 0);
-    state.vy_mps = a*vy + (1-a)*(prevProj.vy_mps || 0);
-  } else {
-    state.vx_mps = 0;
-    state.vy_mps = 0;
-  }
-
-  state.speed_mps = Math.hypot(state.vx_mps, state.vy_mps);
-
-  // angle of travel (screen coords: +y downward, so invert for physics-ish)
-  state.angle_deg = Math.atan2(-state.vy_mps, state.vx_mps) * 180/Math.PI;
-
-  prevProj = {...state};
-  return state;
-}
-
-/* =========================================================
-   Kinetics (proxy)
-========================================================= */
-function processKinetics(kp, dt, t) {
-  if(!prevKeypoints || !currentParticipant) return null;
-
+function processDriverKinematics(kp, dt) {
   const jName = document.getElementById('kinJoint').value;
   const side = document.getElementById('kinSide').value;
-
   const idx = getJointIndex(jName, side);
   if(idx == null) return null;
 
-  const curr = kp[idx];
-  const prev = prevKeypoints[idx];
-  if(!curr || !prev || curr.score < 0.30 || prev.score < 0.30) return null;
+  const p = kp[idx];
+  if(!p || p.score < 0.30) return null;
 
-  // velocity vector (m/s)
+  // driver linear velocity
+  const v = getLinearVelMps(kp, idx, dt);
+
+  // driver angle + angular velocity
+  const ang = getJointAngleDeg(kp, jName, side);
+  let w = 0;
+  if(prevAngleDriver != null && isFinite(prevAngleDriver) && isFinite(ang)) {
+    let d = ang - prevAngleDriver;
+    if(d > 180) d -= 360;
+    if(d < -180) d += 360;
+    w = d / Math.max(1e-4, dt);
+  }
+  prevAngleDriver = ang;
+
+  // driver displacement (cumulative path length in meters)
   const scale = getPxToMeter();
-  const vx = (curr.x - prev.x) * scale / Math.max(1e-4, dt);
-  const vy = (curr.y - prev.y) * scale / Math.max(1e-4, dt);
+  if(prevDriverPos && prevDriverPos.ok) {
+    const dx = (p.x - prevDriverPos.x) * scale;
+    const dy = (p.y - prevDriverPos.y) * scale;
+    cumDisp += Math.hypot(dx, dy);
+  }
+  prevDriverPos = { x:p.x, y:p.y, ok:true };
 
-  // acceleration magnitude (m/s^2) ~ change in speed / dt (simple proxy)
-  const v = Math.hypot(vx, vy);
-  const prevV = (function(){
-    const pc = prevKeypoints[idx];
-    const pprev = prevKeypoints[idx]; // no second prev, keep simple
-    if(!pc || !pprev) return v;
-    return v;
-  })();
-  const accel = Math.abs(v - prevV) / Math.max(1e-4, dt);
+  // projectile
+  const proj = computeProjectileState(lastProjectiles, dt);
 
-  // segment selection
+  return {
+    driver: `${jName}_${side}`,
+    v_mps: v,
+    angle_deg: isFinite(ang) ? ang : 0,
+    angVel_dps: w,
+    disp_m: cumDisp,
+    projValid: proj.valid ? 1 : 0,
+    projSpeed_mps: proj.valid ? proj.speed_mps : 0
+  };
+}
+
+/* =========================================================
+   Kinetics Driver (TROUBLESHOOTED + CLEAN LOW-PASS)
+   - Ensures dt sanity
+   - Uses forceRaw and momentRaw then low-pass to forceFilt/momentFilt
+   - Plots filtered series only
+========================================================= */
+let prevForceFilt = 0;
+let prevMomentFilt = 0;
+
+function processDriverKinetics(kp, dt, tSec, kin) {
+  if(!currentParticipant || !prevKeypoints || !kin) return null;
+
+  // choose segment based on driver joint
+  const driverJoint = kin.driver.split("_")[0];
   let seg = "thigh";
-  if(jName === "knee") seg = "shank";
-  if(jName === "ankle") seg = "foot";
-  if(jName === "shoulder") seg = "upperArm";
-  if(jName === "elbow") seg = "forearm";
-  if(jName === "wrist") seg = "hand";
+  if(driverJoint === "knee") seg = "shank";
+  if(driverJoint === "ankle") seg = "foot";
+  if(driverJoint === "shoulder") seg = "upperArm";
+  if(driverJoint === "elbow") seg = "forearm";
+  if(driverJoint === "wrist") seg = "hand";
 
   const segMass = currentParticipant.mass * (SEG_MASS[seg] || 0.10);
 
-  // Force proxy
+  // Acceleration proxy: a ≈ Δv / dt (we approximate Δv using current v and previous v from series)
+  const prevV = rec.driverLinVel.length ? rec.driverLinVel[rec.driverLinVel.length - 1] : kin.v_mps;
+  const accel = Math.abs(kin.v_mps - prevV) / Math.max(1e-4, dt);
   const forceRaw = segMass * accel;
 
-  // Angular accel proxy (deg/s^2) from joint angVel derivative for same joint (if selected) else compute quickly
-  const ang = getJointAngleDeg(kp, jName, side);
-  const prevAng = prevAngleMap.get(`kin_${jName}_${side}`);
-  prevAngleMap.set(`kin_${jName}_${side}`, ang);
+  // Moment proxy: τ = Iα, α from angular velocity derivative
+  const prevW = rec.driverAngVel.length ? rec.driverAngVel[rec.driverAngVel.length - 1] : kin.angVel_dps;
+  const angAccel_dps2 = (kin.angVel_dps - prevW) / Math.max(1e-4, dt);
+  const alpha = angAccel_dps2 * Math.PI / 180;
 
-  let angVel = 0;
-  if(prevAng != null && isFinite(prevAng) && isFinite(ang)) {
-    let d = ang - prevAng;
-    if(d > 180) d -= 360;
-    if(d < -180) d += 360;
-    angVel = d / Math.max(1e-4, dt); // deg/s
-  }
-
-  const prevAngVel = prevAngleMap.get(`kin_w_${jName}_${side}`) || 0;
-  prevAngleMap.set(`kin_w_${jName}_${side}`, angVel);
-  const angAccel = (angVel - prevAngVel) / Math.max(1e-4, dt); // deg/s^2
-
-  // Moment proxy: τ = I * α
-  // I ~ m*(kL)^2 ; L approximated from participant height * segment length fraction
   const L = estimateSegmentLengthM(seg);
   const k = SEG_K[seg] || 0.30;
   const I = segMass * Math.pow(k * L, 2);
 
-  // Convert deg/s^2 to rad/s^2
-  const alpha = angAccel * Math.PI / 180;
   const momentRaw = I * alpha;
 
-  // Filter
+  // Low-pass filter (clean graph)
   const hz = parseFloat(document.getElementById('cutoffHz').value);
-  const forceFilt = lowPass(getLastVal('forceFilt'), forceRaw, dt, hz);
-  const momentFilt = lowPass(getLastVal('momentFilt'), momentRaw, dt, hz);
+  const forceFilt = lowPass(prevForceFilt, forceRaw, dt, hz);
+  const momentFilt = lowPass(prevMomentFilt, momentRaw, dt, hz);
 
-  // UI
-  document.getElementById('lblForce').innerText = forceFilt.toFixed(0) + " N";
-  document.getElementById('lblMoment').innerText = momentFilt.toFixed(2) + " Nm";
+  // extra smoothing for display stability (2nd pass, optional but helpful visually)
+  const forceFilt2 = lowPass(prevForceFilt, forceFilt, dt, hz);
+  const momentFilt2 = lowPass(prevMomentFilt, momentFilt, dt, hz);
 
-  // store for export
-  kineticsSeries.push({
-    time_s: t,
-    driver_joint: `${jName}_${side}`,
-    v_mps: v,
-    a_mps2: accel,
-    angle_deg: isFinite(ang) ? ang : 0,
-    angVel_dps: angVel,
-    angAccel_dps2: angAccel,
-    forceRaw_N: forceRaw,
-    forceFilt_N: forceFilt,
-    momentRaw_Nm: momentRaw,
-    momentFilt_Nm: momentFilt
-  });
+  prevForceFilt = forceFilt2;
+  prevMomentFilt = momentFilt2;
 
-  // push chart buffers
-  pushData('forceRaw', t, forceRaw);
-  pushData('forceFilt', t, forceFilt);
-  pushData('momentRaw', t, momentRaw);
-  pushData('momentFilt', t, momentFilt);
+  // UI labels
+  document.getElementById('lblForce').innerText = forceFilt2.toFixed(0) + " N";
+  document.getElementById('lblMoment').innerText = momentFilt2.toFixed(2) + " Nm";
 
-  return { forceRaw, forceFilt, momentRaw, momentFilt, driver:`${jName}_${side}` };
+  // chart buffers (filtered only)
+  pushChart('forceFilt', tSec, forceFilt2);
+  pushChart('momentFilt', tSec, momentFilt2);
+
+  return { forceFilt_N: forceFilt2, momentFilt_Nm: momentFilt2 };
 }
 
 function estimateSegmentLengthM(seg) {
   const h = currentParticipant ? (currentParticipant.height/100) : 1.75;
-  // rough fractions
   const frac = {
     thigh:0.245, shank:0.246, foot:0.152,
     upperArm:0.186, forearm:0.146, hand:0.108,
@@ -1268,25 +1178,22 @@ function lowPass(prev, curr, dt, fc) {
   return prev + alpha * (curr - prev);
 }
 
-function pushData(key, t, v) {
+/* =========================================================
+   Charts (filtered-only)
+========================================================= */
+function pushChart(key, t, v) {
   const win = parseInt(document.getElementById('windowSeconds').value);
   chartSeries[key].push({t, v});
   while(chartSeries[key].length && chartSeries[key][0].t < t - win) chartSeries[key].shift();
 }
-function getLastVal(key){
-  const a = chartSeries[key];
-  return a.length ? a[a.length-1].v : 0;
-}
 
-/* =========================================================
-   Charts
-========================================================= */
 function throttleChartDraw(t) {
   if(t - lastChartDraw < 0.1) return;
   lastChartDraw = t;
   drawChart('chartForce', 'forceFilt');
   drawChart('chartMoment', 'momentFilt');
 }
+
 function drawChart(id, key) {
   const c = document.getElementById(id);
   const g = c.getContext('2d');
@@ -1319,37 +1226,357 @@ function drawChart(id, key) {
 }
 
 /* =========================================================
+   Projectile state (center + velocity)
+========================================================= */
+function computeProjectileState(projs, dt) {
+  const state = { valid:false, cx:0, cy:0, vx_mps:0, vy_mps:0, speed_mps:0, angle_deg:0, class:"", score:0 };
+  if(!projs || !projs.length) { prevProj = null; return state; }
+
+  const best = projs[0];
+  const [x,y,w,h] = best.bbox;
+  const cx = x + w/2;
+  const cy = y + h/2;
+
+  state.valid = true;
+  state.class = best.class;
+  state.score = best.score;
+  state.cx = cx; state.cy = cy;
+
+  const scale = getPxToMeter();
+  if(prevProj && prevProj.valid) {
+    const vx = ((cx - prevProj.cx) * scale) / Math.max(1e-4, dt);
+    const vy = ((cy - prevProj.cy) * scale) / Math.max(1e-4, dt);
+    const a = 0.35;
+    state.vx_mps = a*vx + (1-a)*(prevProj.vx_mps || 0);
+    state.vy_mps = a*vy + (1-a)*(prevProj.vy_mps || 0);
+  }
+
+  state.speed_mps = Math.hypot(state.vx_mps, state.vy_mps);
+  state.angle_deg = Math.atan2(-state.vy_mps, state.vx_mps) * 180/Math.PI;
+
+  prevProj = {...state};
+  return state;
+}
+
+/* =========================================================
+   Recording (simplified by requirement)
+========================================================= */
+function toggleRecording() {
+  const btn = document.getElementById('recordBtn');
+  if(!isRecording) {
+    if(!currentParticipant) return showStatus("Set a participant first.", "error");
+    isRecording = true;
+
+    // clear existing series
+    rec = { t:[], driverLinVel:[], driverAngVel:[], driverAngle:[], driverDisp:[], forceFilt:[], momentFilt:[], projSpeed:[], projValid:[] };
+    prevForceFilt = 0;
+    prevMomentFilt = 0;
+    prevAngleDriver = null;
+    prevDriverPos = null;
+    cumDisp = 0;
+
+    btn.textContent = "Stop Recording";
+    btn.className = "btn btn-danger";
+    showStatus("Recording started...", "info");
+    setStatusText("Recording...");
+  } else {
+    isRecording = false;
+    btn.textContent = "Start Recording";
+    btn.className = "btn btn-success";
+    showStatus(`Recording saved. ${rec.t.length} samples.`, "success");
+    setStatusText("Running");
+  }
+}
+
+function recordSimplified(tSec, kin, kinets) {
+  if(!kin) return;
+  rec.t.push(tSec);
+  rec.driverLinVel.push(kin.v_mps || 0);
+  rec.driverAngVel.push(kin.angVel_dps || 0);
+  rec.driverAngle.push(kin.angle_deg || 0);
+  rec.driverDisp.push(kin.disp_m || 0);
+
+  rec.forceFilt.push(kinets?.forceFilt_N || 0);
+  rec.momentFilt.push(kinets?.momentFilt_Nm || 0);
+
+  rec.projValid.push(kin.projValid || 0);
+  rec.projSpeed.push(kin.projSpeed_mps || 0);
+}
+
+function snapshotPNG() {
+  if(!video || video.paused) return showStatus("Start Camera/Upload first.", "error");
+  const c = document.createElement('canvas');
+  const w = overlay.width, h = overlay.height;
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  try { g.drawImage(video, 0, 0, w, h); } catch(_) {}
+  try { g.drawImage(overlay, 0, 0, w, h); } catch(_) {}
+
+  const a = document.createElement('a');
+  a.href = c.toDataURL("image/png");
+  a.download = `snapshot_${Date.now()}.png`;
+  a.click();
+}
+
+/* =========================================================
+   XLSX Export (simplified + phases)
+   Tabs:
+   1_Profile
+   2_Kinematics_Summary (overall + Preparation/Acceleration/FollowThrough)
+   3_Kinetics_ForceMoment_Time (time, forceFilt, momentFilt)
+   4_Technical_Model (push-like vs throw-like + biomech + training rec)
+========================================================= */
+function downloadData() {
+  if(!rec.t.length) return showStatus("No recorded data. Press Start Recording first.", "error");
+
+  const profile = currentParticipant || participants[0] || {name:"",sex:"",age:"",mass:"",height:""};
+  const driver = `${document.getElementById('kinJoint').value}_${document.getElementById('kinSide').value}`;
+
+  // Build phases using a robust, simple temporal split around peak linear velocity
+  const phases = segmentPhases(rec.t, rec.driverLinVel, rec.driverAngVel);
+
+  // Kinematics summary overall + by phase
+  const kinSummaryRows = [];
+  kinSummaryRows.push(...makeKinSummaryBlock("Overall", profile, driver, rangeAll(phases), rec));
+  phases.forEach(ph => {
+    kinSummaryRows.push(...makeKinSummaryBlock(ph.name, profile, driver, ph, rec));
+  });
+
+  // Kinetics series (clean)
+  const kineticsRows = rec.t.map((t, i) => ({
+    time_s: round(t, 4),
+    forceFilt_N: round(rec.forceFilt[i] || 0, 3),
+    momentFilt_Nm: round(rec.momentFilt[i] || 0, 4)
+  }));
+
+  // Technical model
+  const modelRows = buildTechnicalModel(profile, driver, phases, rec);
+
+  // Profile tab
+  const profileRows = [
+    { field:"name", value: profile.name },
+    { field:"sex", value: profile.sex },
+    { field:"age", value: profile.age },
+    { field:"mass_kg", value: profile.mass },
+    { field:"height_cm", value: profile.height },
+    { field:"driver_joint", value: driver },
+    { field:"source", value: sessionMeta.source || "" },
+    { field:"camera_facing", value: sessionMeta.facing || "" },
+    { field:"fps_requested", value: sessionMeta.fpsRequested || "" },
+    { field:"fps_detected_est", value: detectedFPS || "" },
+    { field:"started_at", value: sessionMeta.startedAt || "" },
+    { field:"notes", value: "Kinetics are proxies (F≈mΔv/Δt; τ≈Iα). Use for trends and coaching feedback, not lab-grade ground truth." }
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(profileRows), "1_Profile");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kinSummaryRows), "2_Kinematics_Summary");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kineticsRows), "3_Kinetics_ForceMoment_Time");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(modelRows), "4_Technical_Model");
+
+  const fname = `sport_analysis_${(profile.name||"participant").replace(/\s+/g,"_")}_${Date.now()}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  showStatus("XLSX exported (simplified + phases).", "success");
+}
+
+/* =========================================================
+   Phase segmentation (temporal phases)
+   - Preparation: start -> peak linear velocity index
+   - Acceleration/Propulsion: peak linear velocity ± 15% window (centered)
+   - Follow-through: after acceleration window -> end
+   This gives stable phases without needing foot-strike detection.
+========================================================= */
+function segmentPhases(t, v, w) {
+  const n = t.length;
+  if(n < 10) return [
+    { name:"Preparation", i0:0, i1:Math.max(0,n-1) },
+    { name:"Acceleration", i0:0, i1:Math.max(0,n-1) },
+    { name:"FollowThrough", i0:0, i1:Math.max(0,n-1) }
+  ];
+
+  const peakIdx = argMaxAbs(v);
+  const win = Math.max(3, Math.floor(n * 0.15));
+  const iA0 = clampInt(peakIdx - win, 0, n-1);
+  const iA1 = clampInt(peakIdx + win, 0, n-1);
+
+  return [
+    { name:"Preparation", i0:0, i1:Math.max(0, iA0) },
+    { name:"Acceleration", i0:iA0, i1:iA1 },
+    { name:"FollowThrough", i0:Math.min(n-1, iA1), i1:n-1 }
+  ];
+}
+
+function rangeAll(phases) {
+  return { i0: phases[0].i0, i1: phases[phases.length-1].i1 };
+}
+
+/* =========================================================
+   Kinematics summary block
+   Provide ONLY:
+   - peak linear velocity + average
+   - peak angular velocity + average
+   - peak angular displacement (ROM) + average angle
+   - displacement (path length) + average displacement rate
+   and projectile peak speed if present
+========================================================= */
+function makeKinSummaryBlock(label, profile, driver, ph, rec) {
+  const i0 = ph.i0, i1 = ph.i1;
+  const tt = slice(rec.t, i0, i1);
+  const v = slice(rec.driverLinVel, i0, i1);
+  const w = slice(rec.driverAngVel, i0, i1);
+  const ang = slice(rec.driverAngle, i0, i1);
+  const disp = slice(rec.driverDisp, i0, i1);
+  const projV = slice(rec.projSpeed, i0, i1);
+  const projOk = slice(rec.projValid, i0, i1);
+
+  const dur = tt.length ? (tt[tt.length-1] - tt[0]) : 0;
+
+  const peakV = maxAbs(v);
+  const avgV = mean(v);
+
+  const peakW = maxAbs(w);
+  const avgW = mean(w);
+
+  const rom = (ang.length ? (Math.max(...ang) - Math.min(...ang)) : 0);
+  const avgAng = mean(ang);
+
+  const dispNet = disp.length ? (disp[disp.length-1] - disp[0]) : 0; // cumulative path increase during phase
+  const avgDispRate = dur > 0 ? dispNet / dur : 0;
+
+  let peakProj = 0;
+  for(let i=0;i<projV.length;i++){
+    if((projOk[i]||0)===1) peakProj = Math.max(peakProj, projV[i]||0);
+  }
+
+  return [{
+    phase: label,
+    driver_joint: driver,
+    duration_s: round(dur, 3),
+    peak_linVel_mps: round(peakV, 3),
+    avg_linVel_mps: round(avgV, 3),
+    peak_angVel_dps: round(peakW, 2),
+    avg_angVel_dps: round(avgW, 2),
+    peak_angDisplacement_deg: round(rom, 2),
+    avg_angle_deg: round(avgAng, 2),
+    displacement_m: round(dispNet, 3),
+    avg_dispRate_mps: round(avgDispRate, 3),
+    peak_projectile_speed_mps: round(peakProj, 3)
+  }];
+}
+
+/* =========================================================
+   Technical model: push-like vs throw-like + recommendations
+========================================================= */
+function buildTechnicalModel(profile, driver, phases, rec) {
+  const overall = rangeAll(phases);
+
+  const vAll = slice(rec.driverLinVel, overall.i0, overall.i1);
+  const wAll = slice(rec.driverAngVel, overall.i0, overall.i1);
+  const angAll = slice(rec.driverAngle, overall.i0, overall.i1);
+  const dispAll = slice(rec.driverDisp, overall.i0, overall.i1);
+  const forceAll = slice(rec.forceFilt, overall.i0, overall.i1);
+  const momAll = slice(rec.momentFilt, overall.i0, overall.i1);
+
+  const peakV = maxAbs(vAll);
+  const peakW = maxAbs(wAll);
+  const rom = angAll.length ? (Math.max(...angAll)-Math.min(...angAll)) : 0;
+  const dispNet = dispAll.length ? (dispAll[dispAll.length-1]-dispAll[0]) : 0;
+  const peakF = maxAbs(forceAll);
+  const peakM = maxAbs(momAll);
+
+  // Heuristic index:
+  // - Push-like: higher translational dominance (peakV, displacement, force) relative to rotational metrics
+  // - Throw-like: higher rotational dominance (peakW, moment) relative to translational
+  const transScore = safeDiv(peakV, 1) + safeDiv(dispNet, 0.5) + safeDiv(peakF, 200);
+  const rotScore = safeDiv(peakW, 200) + safeDiv(rom, 60) + safeDiv(peakM, 10);
+
+  const pattern = (rotScore > transScore) ? "Throw-like (rotational dominant)" : "Push-like (translational dominant)";
+  const rationale = (rotScore > transScore)
+    ? "Rotational metrics (peak angular velocity / moment) dominate relative to translation."
+    : "Translational metrics (displacement / linear velocity / force) dominate relative to rotation.";
+
+  // Recommendations (biomech + training)
+  const recos = [];
+
+  // Kinematic cues based on pattern
+  if(pattern.startsWith("Push-like")) {
+    recos.push("Biomechanics: Consider improving proximal-to-distal sequencing (increase rotational contribution) to reduce ‘pushing’ late with distal segments.");
+    recos.push("Kinematics: Aim for earlier build-up of angular velocity (hip/shoulder rotation) before peak distal linear velocity; avoid ‘all at once’ surge.");
+    recos.push("Kinetics: Reduce excessively spiky Force–Time by smoothing acceleration (better braking control); target a more gradual rise and cleaner peak.");
+    recos.push("Training: rotational med-ball throws (hip-to-shoulder separation), cable chops/lifts, landmine rotations; add deceleration work (catch-and-stick, anti-rotation holds).");
+  } else {
+    recos.push("Biomechanics: Throw-like pattern suggests strong rotation; ensure stability and efficient transfer to translation at release/impact.");
+    recos.push("Kinematics: Check if peak angular velocity occurs too early (energy leak) or too late (late whip). Target peak proximal angular velocity slightly before peak linear velocity.");
+    recos.push("Kinetics: If Moment–Time is sharp/spiky, add eccentric control and braking capacity to protect joints while maintaining speed.");
+    recos.push("Training: plyometric med-ball (scoop toss, shot-put toss), band-assisted speed rotations + controlled decel reps, eccentric elbow/shoulder/hip braking drills, technique reps with reduced load for timing.");
+  }
+
+  // Value-based flags
+  if(peakF > 600) recos.push("Flag: Very high peak Force proxy. Confirm technique and consider reducing impact stiffness (softer deceleration, better joint flexion strategy).");
+  if(Math.abs(peakM) > 20) recos.push("Flag: High peak Moment proxy. Emphasize trunk/hip stability + eccentric strength to manage rotational loads safely.");
+  if(peakW > 700) recos.push("Flag: Very high peak angular velocity. Verify keypoint confidence (motion blur) and prioritize timing + smoothness to avoid erratic spikes.");
+
+  const rows = [];
+  rows.push({ section:"Pattern classification", item:"Pattern", value: pattern });
+  rows.push({ section:"Pattern classification", item:"Rationale", value: rationale });
+
+  rows.push({ section:"Key values (overall)", item:"Peak linear velocity (m/s)", value: round(peakV,3) });
+  rows.push({ section:"Key values (overall)", item:"Peak angular velocity (deg/s)", value: round(peakW,2) });
+  rows.push({ section:"Key values (overall)", item:"Peak angular displacement ROM (deg)", value: round(rom,2) });
+  rows.push({ section:"Key values (overall)", item:"Displacement (m)", value: round(dispNet,3) });
+  rows.push({ section:"Key values (overall)", item:"Peak Force–Time (N, filtered)", value: round(peakF,0) });
+  rows.push({ section:"Key values (overall)", item:"Peak Moment–Time (Nm, filtered)", value: round(peakM,3) });
+
+  phases.forEach(ph => {
+    const blk = makeKinSummaryBlock(ph.name, profile, driver, ph, rec)[0];
+    rows.push({ section:"Phase summary", item:`${ph.name} duration (s)`, value: blk.duration_s });
+    rows.push({ section:"Phase summary", item:`${ph.name} peak linVel (m/s)`, value: blk.peak_linVel_mps });
+    rows.push({ section:"Phase summary", item:`${ph.name} peak angVel (deg/s)`, value: blk.peak_angVel_dps });
+    rows.push({ section:"Phase summary", item:`${ph.name} ROM (deg)`, value: blk.peak_angDisplacement_deg });
+    rows.push({ section:"Phase summary", item:`${ph.name} displacement (m)`, value: blk.displacement_m });
+  });
+
+  recos.forEach((t, i) => rows.push({ section:"Recommendations", item:`R${i+1}`, value: t }));
+
+  rows.push({ section:"Notes", item:"Method", value:"Phases are segmented around peak linear velocity (Preparation → Acceleration window → Follow-through). Kinetics are simplified proxies; interpret trends and relative change." });
+
+  return rows;
+}
+
+/* =========================================================
+   Live interpretation string
+========================================================= */
+function buildLiveInterpretation(kin, kinets) {
+  if(!kin) return "—";
+  const parts = [];
+  parts.push(`Driver: ${kin.driver}`);
+  parts.push(`v: ${kin.v_mps.toFixed(2)} m/s | ω: ${kin.angVel_dps.toFixed(0)} °/s | θ: ${kin.angle_deg.toFixed(1)}° | disp: ${kin.disp_m.toFixed(2)} m`);
+  if(kinets) parts.push(`Force: ${kinets.forceFilt_N.toFixed(0)} N | Moment: ${kinets.momentFilt_Nm.toFixed(2)} Nm`);
+  if(kin.projValid) parts.push(`Projectile speed: ${kin.projSpeed_mps.toFixed(2)} m/s`);
+  return parts.join("\n");
+}
+
+/* =========================================================
    UI: Metrics selection
 ========================================================= */
 function addMetric() {
   const type = document.getElementById('metricType').value;
   const joint = document.getElementById('metricJoint').value;
   const side = document.getElementById('metricSide').value;
-
-  // Angle is not meaningful for wrist/ankle without full foot/hand model; still allowed as proxy.
   const id = `${type}_${joint}_${side}`;
   if(!selectedMetrics.find(m => m.id === id)) {
     selectedMetrics.push({id, type, joint, side});
     renderMetricChips();
   }
 }
-
-function removeMetric(id) {
-  selectedMetrics = selectedMetrics.filter(m => m.id !== id);
-  renderMetricChips();
-}
-
-function clearMetrics() {
-  selectedMetrics = [];
-  renderMetricChips();
-}
+function removeMetric(id) { selectedMetrics = selectedMetrics.filter(m => m.id !== id); renderMetricChips(); }
+function clearMetrics() { selectedMetrics = []; renderMetricChips(); }
 
 function renderMetricChips() {
   const chips = document.getElementById('metricChips');
   const panel = document.getElementById('selectedMetricsPanel');
   chips.innerHTML = "";
   panel.innerHTML = "";
-
   selectedMetrics.forEach(m => {
     const label = `${m.type} ${m.joint} ${m.side}`;
     const chip = document.createElement('div');
@@ -1367,341 +1594,13 @@ function renderMetricChips() {
     panel.appendChild(card);
   });
 }
-
 function metricHint(m) {
   if(m.type === "linVel") return "Linear velocity (m/s) of the joint point in 2D.";
   if(m.type === "angVel") return "Angular velocity (°/s) from change in joint angle frame-to-frame.";
-  if(m.type === "angle") {
-    if(m.joint === "wrist" || m.joint === "ankle") return "Proxy angle in 2D (limited without hand/foot keypoints). Use trend only.";
-    return "Joint angle (°) in 2D.";
-  }
+  if(m.type === "angle") return (m.joint === "wrist" || m.joint === "ankle")
+    ? "Proxy angle in 2D (limited without hand/foot keypoints). Trend only."
+    : "Joint angle (°) in 2D.";
   return "";
-}
-
-/* =========================================================
-   Recording + Snapshot
-========================================================= */
-function toggleRecording() {
-  const btn = document.getElementById('recordBtn');
-  if(!isRecording) {
-    if(!currentParticipant) return showStatus("Set a participant first.", "error");
-    isRecording = true;
-    recordingFrames = [];
-    kineticsSeries = [];
-    btn.textContent = "Stop Recording";
-    btn.className = "btn btn-danger";
-    showStatus("Recording started...", "info");
-    setStatusText("Recording...");
-  } else {
-    isRecording = false;
-    btn.textContent = "Start Recording";
-    btn.className = "btn btn-success";
-    showStatus(`Recording saved. ${recordingFrames.length} frames.`, "success");
-    setStatusText("Running");
-  }
-}
-
-function recordFrame(t, kp, kinSnap, kinets) {
-  // Kinematics row: time + each selected metric + projectile state (if any)
-  const row = { time_s: t };
-
-  // selected metrics
-  selectedMetrics.forEach(m => {
-    row[m.id] = (kinSnap && kinSnap.values && isFinite(kinSnap.values[m.id])) ? kinSnap.values[m.id] : 0;
-  });
-
-  // projectile
-  const proj = kinSnap?.projectile;
-  row.proj_valid = proj?.valid ? 1 : 0;
-  row.proj_class = proj?.class || "";
-  row.proj_score = proj?.score || 0;
-  row.proj_cx_px = proj?.cx || 0;
-  row.proj_cy_px = proj?.cy || 0;
-  row.proj_vx_mps = proj?.vx_mps || 0;
-  row.proj_vy_mps = proj?.vy_mps || 0;
-  row.proj_speed_mps = proj?.speed_mps || 0;
-  row.proj_angle_deg = proj?.angle_deg || 0;
-
-  // optional: store keypoints (reduced) for debug / later processing
-  // (kept lean: store only major joints)
-  const major = ["shoulder_L","shoulder_R","elbow_L","elbow_R","wrist_L","wrist_R","hip_L","hip_R","knee_L","knee_R","ankle_L","ankle_R"];
-  major.forEach(k => {
-    const idx = getJointIndex(k.split("_")[0], k.split("_")[1]);
-    const p = kp[idx];
-    row[`kp_${k}_x`] = p?.x || 0;
-    row[`kp_${k}_y`] = p?.y || 0;
-    row[`kp_${k}_s`] = p?.score || 0;
-  });
-
-  // kinetics snapshot summary columns (duplicated here for alignment)
-  row.forceFilt_N = kinets?.forceFilt ?? 0;
-  row.momentFilt_Nm = kinets?.momentFilt ?? 0;
-  row.driver = kinets?.driver ?? "";
-
-  recordingFrames.push(row);
-}
-
-function snapshotPNG() {
-  // Composite: current video frame + overlay
-  if(!video || video.paused) return showStatus("Start Camera/Upload first.", "error");
-  const c = document.createElement('canvas');
-  const w = overlay.width, h = overlay.height;
-  c.width = w; c.height = h;
-  const g = c.getContext('2d');
-
-  // draw video
-  try { g.drawImage(video, 0, 0, w, h); } catch(_) {}
-  // draw overlay
-  try { g.drawImage(overlay, 0, 0, w, h); } catch(_) {}
-
-  const a = document.createElement('a');
-  a.href = c.toDataURL("image/png");
-  a.download = `snapshot_${Date.now()}.png`;
-  a.click();
-}
-
-/* =========================================================
-   Export: 4 Tabs (Profile / Kinematics / Kinetics / Model)
-========================================================= */
-function downloadData() {
-  if(!recordingFrames.length) return showStatus("No recorded data. Press Start Recording first.", "error");
-
-  // Sheet 1: Participant Profile
-  const profile = currentParticipant || participants[0] || {name:"",sex:"",age:"",mass:"",height:""};
-  const profileRows = [
-    { field:"name", value: profile.name },
-    { field:"sex", value: profile.sex },
-    { field:"age", value: profile.age },
-    { field:"mass_kg", value: profile.mass },
-    { field:"height_cm", value: profile.height },
-    { field:"source", value: sessionMeta.source || "" },
-    { field:"camera_facing", value: sessionMeta.facing || "" },
-    { field:"fps_requested", value: sessionMeta.fpsRequested || "" },
-    { field:"fps_detected_est", value: detectedFPS || "" },
-    { field:"started_at", value: sessionMeta.startedAt || "" },
-    { field:"notes", value: "Kinetics are proxies (F=ma, τ=Iα simplified). Use for trends, not lab-grade ground truth." }
-  ];
-
-  // Sheet 2: Kinematics (per frame)
-  const kinRows = recordingFrames.map(r => ({...r}));
-
-  // Sheet 3: Kinetics (per frame)
-  // If kineticsSeries is shorter than frames, it will still export whatever is available.
-  const kinetsRows = kineticsSeries.length ? kineticsSeries : buildKineticsFallbackFromFrames();
-
-  // Sheet 4: Biomechanics Technical Model (summary + interpretation)
-  const modelRows = buildBiomechModel(profile, kinRows, kinetsRows);
-
-  const wb = XLSX.utils.book_new();
-
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(profileRows), "1_Profile");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kinRows), "2_Kinematics");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kinetsRows), "3_Kinetics");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(modelRows), "4_Model");
-
-  const fname = `sport_analysis_${(profile.name||"participant").replace(/\s+/g,"_")}_${Date.now()}.xlsx`;
-  XLSX.writeFile(wb, fname);
-  showStatus("XLSX exported (4 tabs).", "success");
-}
-
-function buildKineticsFallbackFromFrames() {
-  return recordingFrames.map(r => ({
-    time_s: r.time_s,
-    driver_joint: r.driver || "",
-    forceFilt_N: r.forceFilt_N || 0,
-    momentFilt_Nm: r.momentFilt_Nm || 0
-  }));
-}
-
-function buildBiomechModel(profile, kinRows, kinetsRows) {
-  // compute peaks
-  const peaks = {};
-
-  // selected metric peaks
-  selectedMetrics.forEach(m => {
-    const key = m.id;
-    let max = -Infinity, min = Infinity, tMax = 0, tMin = 0;
-    kinRows.forEach(r => {
-      const v = parseFloat(r[key] || 0);
-      if(v > max) { max = v; tMax = r.time_s; }
-      if(v < min) { min = v; tMin = r.time_s; }
-    });
-    peaks[`peak_${key}`] = max;
-    peaks[`t_peak_${key}`] = tMax;
-    peaks[`min_${key}`] = min;
-    peaks[`t_min_${key}`] = tMin;
-  });
-
-  // kinetics peaks
-  const peakForce = maxBy(kinetsRows, "forceFilt_N");
-  const peakMoment = maxByAbs(kinetsRows, "momentFilt_Nm");
-
-  // projectile peaks
-  const projValidRows = kinRows.filter(r => (r.proj_valid || 0) === 1);
-  const peakProjSpeed = projValidRows.length ? maxBy(projValidRows, "proj_speed_mps") : null;
-  const meanProjAngle = projValidRows.length ? mean(projValidRows.map(r => +r.proj_angle_deg || 0)) : 0;
-
-  // crude skill inference
-  const skill = inferSkill(kinRows, kinetsRows);
-
-  // technique model text blocks (kept spreadsheet-friendly)
-  const warnings = [
-    "2D pose estimation: depth ambiguity; angles depend on camera plane and occlusion.",
-    "Projectile tracking (COCO-SSD): may miss small fast balls; use good lighting and keep projectile large in frame.",
-    "Kinetics are proxies (no GRF plates); treat Force–Time and Moment–Time as relative trends."
-  ];
-
-  const model = [
-    { section:"Overview", item:"Participant", value:`${profile.name} (${profile.sex}, ${profile.age}y)` },
-    { section:"Overview", item:"Anthropometrics", value:`${profile.mass} kg, ${profile.height} cm` },
-    { section:"Overview", item:"Identified skill (heuristic)", value: skill },
-
-    { section:"Kinetics", item:"Peak Force–Time (filtered)", value: `${fmt(peakForce?.value,0)} N @ t=${fmt(peakForce?.time,3)}s (driver ${peakForce?.driver||""})` },
-    { section:"Kinetics", item:"Peak |Moment–Time| (filtered)", value: `${fmt(peakMoment?.value,2)} Nm @ t=${fmt(peakMoment?.time,3)}s (driver ${peakMoment?.driver||""})` },
-
-    { section:"Projectile", item:"Detected frames", value: `${projValidRows.length} / ${kinRows.length}` },
-    { section:"Projectile", item:"Peak projectile speed", value: peakProjSpeed ? `${fmt(peakProjSpeed.value,2)} m/s @ t=${fmt(peakProjSpeed.time,3)}s` : "—" },
-    { section:"Projectile", item:"Mean travel angle", value: projValidRows.length ? `${fmt(meanProjAngle,1)}° (screen-based, +upwards)` : "—" },
-  ];
-
-  // add metric peaks
-  selectedMetrics.forEach(m => {
-    const key = m.id;
-    model.push(
-      { section:"Kinematics", item:`Peak ${key}`, value:`${fmt(peaks[`peak_${key}`],2)} @ t=${fmt(peaks[`t_peak_${key}`],3)}s` },
-      { section:"Kinematics", item:`Min ${key}`, value:`${fmt(peaks[`min_${key}`],2)} @ t=${fmt(peaks[`t_min_${key}`],3)}s` }
-    );
-  });
-
-  // technical biomechanics model (attempt)
-  const tech = buildTechnicalModelText(skill, selectedMetrics, peakForce, peakMoment, peakProjSpeed);
-  tech.forEach((line, i) => model.push({ section:"Biomechanics model", item:`Model_${i+1}`, value: line }));
-
-  warnings.forEach((w, i) => model.push({ section:"Warnings", item:`W${i+1}`, value: w }));
-
-  return model;
-}
-
-function inferSkill(kinRows, kinetsRows) {
-  // Very simple heuristic:
-  // - if projectile detected AND upper-limb activity is present -> "Throwing/Striking"
-  // - if projectile detected AND lower-limb driver peaks -> "Kicking"
-  const projFrames = kinRows.filter(r => (r.proj_valid||0)===1).length;
-
-  const driverCounts = {};
-  kinetsRows.forEach(r => {
-    const d = r.driver_joint || r.driver || "";
-    if(!d) return;
-    driverCounts[d] = (driverCounts[d] || 0) + 1;
-  });
-
-  const topDriver = Object.entries(driverCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || "";
-
-  const upper = /shoulder|elbow|wrist/i.test(topDriver);
-  const lower = /hip|knee|ankle/i.test(topDriver);
-
-  if(projFrames > Math.max(10, kinRows.length*0.15)) {
-    if(upper) return "Projectile + upper-limb dominant pattern → Throwing / Striking skill (2D heuristic)";
-    if(lower) return "Projectile + lower-limb dominant pattern → Kicking / Instep skill (2D heuristic)";
-    return "Projectile present → Ballistic / projectile skill (2D heuristic)";
-  }
-  if(upper) return "Upper-limb dominant pattern → Throwing/Striking-like motion (no reliable projectile detected)";
-  if(lower) return "Lower-limb dominant pattern → Running/Kicking-like motion (no reliable projectile detected)";
-  return "General movement (insufficient cues to classify skill)";
-}
-
-function buildTechnicalModelText(skill, metrics, peakForce, peakMoment, peakProjSpeed) {
-  const lines = [];
-
-  lines.push(`Skill inference: ${skill}.`);
-  lines.push("Model structure: (1) Kinematic sequencing → (2) Kinetic proxy loading → (3) Release/impact outcome (if projectile detected).");
-
-  // kinematic sequencing (generic)
-  const hasUpper = metrics.some(m => ["shoulder","elbow","wrist"].includes(m.joint));
-  const hasLower = metrics.some(m => ["hip","knee","ankle"].includes(m.joint));
-  if(hasUpper) lines.push("Upper-limb sequencing: shoulder angle/velocity initiates → elbow extension velocity peaks → wrist proxy velocity refines end-effector speed.");
-  if(hasLower) lines.push("Lower-limb sequencing: hip flex/ext → knee ext/flex → ankle proxy angle/velocity contributes to distal whip + contact stiffness.");
-
-  // kinetics linking
-  lines.push(`Kinetic proxy: peak Force–Time ≈ ${fmt(peakForce?.value,0)} N; peak |Moment–Time| ≈ ${fmt(peakMoment?.value,2)} Nm (filtered). Interpret as relative loading and rotational demand around the selected driver joint.`);
-
-  // projectile outcome
-  if(peakProjSpeed) lines.push(`Projectile outcome: peak speed ≈ ${fmt(peakProjSpeed.value,2)} m/s. Combine with kinematic peaks to locate the likely release/impact window (near projectile speed peak).`);
-  else lines.push("Projectile outcome: not reliably detected; use joint velocity peaks and kinetics peaks to approximate release/impact window.");
-
-  // actionable interpretation cues
-  lines.push("Technique cues (biomech): aim for proximal-to-distal timing (peak proximal angular velocity precedes distal); avoid early distal peak (energy leak).");
-  lines.push("Risk/efficiency cues: extremely spiky angular velocity + spiky moment proxy suggests abrupt braking → consider smoother acceleration profile / improved deceleration control.");
-
-  return lines;
-}
-
-function maxBy(arr, key) {
-  if(!arr || !arr.length) return null;
-  let best = null;
-  arr.forEach(r => {
-    const v = +r[key];
-    if(!isFinite(v)) return;
-    if(!best || v > best.value) best = { value:v, time:r.time_s ?? r.time ?? 0, driver:r.driver_joint ?? r.driver ?? "" };
-  });
-  return best;
-}
-function maxByAbs(arr, key) {
-  if(!arr || !arr.length) return null;
-  let best = null;
-  arr.forEach(r => {
-    const v = +r[key];
-    if(!isFinite(v)) return;
-    const a = Math.abs(v);
-    if(!best || a > Math.abs(best.value)) best = { value:v, time:r.time_s ?? r.time ?? 0, driver:r.driver_joint ?? r.driver ?? "" };
-  });
-  return best;
-}
-function mean(xs) {
-  if(!xs.length) return 0;
-  return xs.reduce((a,b)=>a+b,0)/xs.length;
-}
-function fmt(x, dp) {
-  if(x == null || !isFinite(x)) return "—";
-  return (+x).toFixed(dp);
-}
-
-/* =========================================================
-   Live interpretation string (quick and readable)
-========================================================= */
-function buildLiveInterpretation(kinSnap, kinets) {
-  const parts = [];
-
-  // projectile
-  const proj = kinSnap?.projectile;
-  if(proj?.valid) {
-    parts.push(`Projectile: ${proj.class} • speed ${proj.speed_mps.toFixed(2)} m/s • angle ${proj.angle_deg.toFixed(1)}°`);
-  } else {
-    parts.push("Projectile: —");
-  }
-
-  // kinetics
-  if(kinets) {
-    parts.push(`Kinetics: Force ${kinets.forceFilt.toFixed(0)} N • Moment ${kinets.momentFilt.toFixed(2)} Nm (driver ${kinets.driver})`);
-  } else {
-    parts.push("Kinetics: —");
-  }
-
-  // kinematics highlights
-  const vals = kinSnap?.values || {};
-  const keys = Object.keys(vals);
-  if(keys.length) {
-    const top = keys.slice(0, 3).map(k => `${k}=${(+vals[k]).toFixed(1)}`).join(" • ");
-    parts.push(`Kinematics: ${top}${keys.length>3 ? " …" : ""}`);
-  } else {
-    parts.push("Kinematics: select metrics to display.");
-  }
-
-  // warnings
-  const warns = kinSnap?.warnings || [];
-  if(warns.length) parts.push(`⚠ ${warns[0]}`);
-
-  return parts.join("\n");
 }
 
 /* =========================================================
@@ -1721,20 +1620,20 @@ function showStatus(msg, type) {
   el.style.display = 'block';
   setTimeout(() => el.style.display='none', 3000);
 }
-
-function setStatusText(t) {
-  document.getElementById('statusText').innerText = t;
-}
-function setSourceText(t) {
-  document.getElementById('sourceText').innerText = t;
-}
+function setStatusText(t) { document.getElementById('statusText').innerText = t; }
+function setSourceText(t) { document.getElementById('sourceText').innerText = t; }
 
 /* =========================================================
-   Stop helper
+   Utility
 ========================================================= */
-function stopActiveStream() {
-  stopActive();
-}
+function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+function clampInt(x, a, b){ return Math.max(a, Math.min(b, Math.round(x))); }
+function round(x, dp){ if(!isFinite(x)) return 0; const p = Math.pow(10,dp); return Math.round(x*p)/p; }
+function slice(arr, i0, i1){ return arr.slice(i0, i1+1); }
+function mean(arr){ if(!arr.length) return 0; return arr.reduce((s,x)=>s+(+x||0),0)/arr.length; }
+function maxAbs(arr){ if(!arr.length) return 0; let m=0; arr.forEach(x=>{ const a=Math.abs(+x||0); if(a>m) m=a; }); return m; }
+function argMaxAbs(arr){ let best=0, bestV=-1; for(let i=0;i<arr.length;i++){ const a=Math.abs(+arr[i]||0); if(a>bestV){ bestV=a; best=i; } } return best; }
+function safeDiv(x, d){ return (d===0)?0:(x/d); }
 </script>
 </body>
 </html>
