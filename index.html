@@ -1015,6 +1015,7 @@ without prior written permission from Ng Jun Wei.
       video.muted = true;
       video.autoplay = true;
       video.controls = false;
+      video.loop = false;
       usingUpload = false;
       uploadFps = 60;
       if (uploadUrl) {
@@ -1124,14 +1125,10 @@ without prior written permission from Ng Jun Wei.
     video.srcObject = null;
     video.controls = true;
     video.muted = true;
-    video.autoplay = false;
+    video.autoplay = true;
+    video.loop = true;
     video.setAttribute("playsinline", "");
     video.src = uploadUrl;
-    video.onended = () => {
-      if (!usingUpload) return;
-      if (isRecording) stopRecording();
-      showStatus("Upload playback ended.", "info");
-    };
 
     showStatus("Loading uploaded video…", "info");
     await new Promise(res => (video.onloadedmetadata = () => res()));
@@ -1153,10 +1150,10 @@ without prior written permission from Ng Jun Wei.
 
     resetSessionState();
 
-    showStatus("Upload ready ✅ Press play to analyze.", "success");
+    showStatus("Upload ready ✅ Auto-playing for analysis.", "success");
 
     video.play().catch(() => {
-      showStatus("Upload ready ✅ Press play to analyze.", "success");
+      showStatus("Upload ready ✅ Tap play to analyze.", "success");
     });
 
     if (animationId) cancelAnimationFrame(animationId);
@@ -1169,7 +1166,7 @@ without prior written permission from Ng Jun Wei.
 
     if (video) {
       video.pause();
-      video.onended = null;
+      video.loop = false;
       if (uploadUrl) {
         URL.revokeObjectURL(uploadUrl);
         uploadUrl = null;
@@ -1451,12 +1448,6 @@ without prior written permission from Ng Jun Wei.
         return;
       }
 
-      if (usingUpload && video.ended) {
-        updateFPS();
-        animationId = requestAnimationFrame(loop);
-        return;
-      }
-
       resizeOverlayToVideo();
       ctx.clearRect(0,0,overlay.width, overlay.height);
 
@@ -1620,6 +1611,10 @@ without prior written permission from Ng Jun Wei.
     document.getElementById("stopBtn").disabled = false;
 
     showStatus(`Recording for ${currentParticipant.name}…`, "info");
+
+    if (usingUpload && video && video.paused) {
+      video.play().catch(() => {});
+    }
   }
 
   function stopRecording() {
