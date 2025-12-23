@@ -1123,7 +1123,7 @@ without prior written permission from Ng Jun Wei.
 
     video.pause();
     video.srcObject = null;
-    video.controls = true;
+    video.controls = false;
     video.muted = true;
     video.autoplay = true;
     video.loop = true;
@@ -1594,8 +1594,16 @@ without prior written permission from Ng Jun Wei.
 
   // ========= Recording =========
   function startRecording() {
-    const selectedId = document.getElementById("selectedParticipant").value;
-    if (!selectedId) { showStatus("Select a participant first!", "error"); return; }
+    let selectedId = document.getElementById("selectedParticipant").value;
+    if (!selectedId) {
+      if (participants.length === 1) {
+        document.getElementById("selectedParticipant").value = participants[0].id;
+        selectedId = participants[0].id;
+      } else {
+        showStatus(participants.length ? "Select a participant first!" : "Add a participant first!", "error");
+        return;
+      }
+    }
     currentParticipant = participants.find(p => String(p.id) === String(selectedId));
     if (!currentParticipant) { showStatus("Participant not found.", "error"); return; }
 
