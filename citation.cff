@@ -5,7 +5,7 @@ authors:
     given-names: Jun Wei
     orcid: https://orcid.org/my-orcid?orcid=0000-0001-8634-1938
 title: "Sportmotion Analysis"
-version: 2.0.4
+version: 1.0.1
 identifiers:
   - type: doi
     value: 10.5281/zenodo.1234
