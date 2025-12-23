@@ -173,7 +173,7 @@
     .chart-title span{ color:#666; font-weight: 850; font-size: .9em; }
     canvas.chart{
       width: 100%;
-      height: 170px;
+      height: 180px;
       display:block;
       border-radius: 12px;
       background: #fafafa;
@@ -211,7 +211,7 @@
     .collapsible{
       overflow: hidden;
       transition: max-height .22s ease, opacity .22s ease;
-      max-height: 2000px;
+      max-height: 2500px;
       opacity: 1;
     }
     .collapsed .collapsible{
@@ -242,7 +242,7 @@
 <body>
 <div class="container">
   <h1>🏃‍♂️ Movement Kinetics Lab</h1>
-  <p class="subtitle">Skill inference via CV heuristics • projectile kinematics exported • ω in [rad/s], angles exported in [rad]</p>
+  <p class="subtitle">Plane selector • fixed ω capture • discrete sample series (fps-based) • per-phase avg+peak summaries</p>
 
   <div id="statusMessage" class="status-message"></div>
 
@@ -260,12 +260,23 @@
           <div><label>Mass (kg) *</label><input id="participantMass" type="number" value="70"></div>
           <div><label>Height (cm) *</label><input id="participantHeight" type="number" value="175"></div>
         </div>
-        <button class="btn btn-success" onclick="addParticipant()">Add / Update Participant</button>
+        <button class="btn btn-success" onclick="addParticipant(true)">Add / Update Participant</button>
 
         <div class="divider"></div>
 
-        <label>Select Participant</label>
-        <select id="selectedParticipant" onchange="onParticipantChange()"></select>
+        <div class="form-grid">
+          <div>
+            <label>Select Participant</label>
+            <select id="selectedParticipant" onchange="onParticipantChange()"></select>
+          </div>
+          <div>
+            <label>Motion Plane</label>
+            <select id="motionPlane">
+              <option value="sagittal" selected>Sagittal (side view)</option>
+              <option value="frontal">Frontal (front view)</option>
+            </select>
+          </div>
+        </div>
 
         <div class="divider"></div>
 
@@ -292,8 +303,8 @@
             <select id="cameraFacing"><option value="environment">Back</option><option value="user">Front</option></select>
           </div>
           <div>
-            <label>Window (s)</label>
-            <select id="windowSeconds"><option value="5">5s</option><option value="10" selected>10s</option></select>
+            <label>Chart Window (s)</label>
+            <select id="windowSeconds"><option value="5">5s</option><option value="10" selected>10s</option><option value="20">20s</option></select>
           </div>
           <div>
             <label>Low-pass cutoff (Hz)</label>
@@ -333,7 +344,6 @@
               <option value="kite">Kite</option>
               <option value="bottle">Bottle</option>
               <option value="cup">Cup</option>
-              <option value="person">Person</option>
             </select>
           </div>
           <div>
@@ -363,10 +373,12 @@
           <div>
             <label>Driver Joint</label>
             <select id="kinJoint">
-              <option value="hip">Hip</option><option value="knee">Knee</option>
-              <option value="shoulder">Shoulder</option><option value="elbow">Elbow</option>
-              <option value="ankle">Ankle</option>
-              <option value="wrist">Wrist</option>
+              <option value="hip">Hip</option>
+              <option value="knee">Knee</option>
+              <option value="shoulder">Shoulder</option>
+              <option value="elbow">Elbow</option>
+              <option value="wrist">Wrist (segment ω)</option>
+              <option value="ankle">Ankle (segment ω)</option>
             </select>
           </div>
           <div>
@@ -374,12 +386,14 @@
             <select id="kinSide"><option value="R">Right</option><option value="L">Left</option></select>
           </div>
         </div>
-        <p class="mini">ω computed as Δθ(rad)/Δt → [rad/s]. Angles exported in [rad]. Projectile kinematics exported in [m], [m/s], [m/s²].</p>
+        <p class="mini">
+          ω always in <b>[rad/s]</b>. For wrist/ankle, ω is computed from segment orientation (elbow→wrist, knee→ankle), not a 3-point joint angle.
+        </p>
       </div>
 
       <div class="card collapsible-card" id="displaySelectorCard" style="margin-top:12px;">
         <div class="card-head">
-          <h3 style="margin:0;">Display Selector</h3>
+          <h3 style="margin:0;">Kinematics Selector</h3>
           <button class="collapse-btn" onclick="toggleCollapse('displaySelectorCard')">
             <span id="displaySelectorCard_lbl">Collapse</span><span class="collapse-icon"></span>
           </button>
@@ -395,19 +409,30 @@
               </select>
             </div>
             <div>
-              <label>Joint</label>
+              <label>Joint / Segment</label>
               <select id="metricJoint">
                 <option value="shoulder">Shoulder</option>
                 <option value="elbow">Elbow</option>
-                <option value="wrist">Wrist</option>
+                <option value="wrist">Wrist (segment)</option>
                 <option value="hip">Hip</option>
                 <option value="knee">Knee</option>
-                <option value="ankle">Ankle</option>
+                <option value="ankle">Ankle (segment)</option>
               </select>
             </div>
             <div>
               <label>Side</label>
               <select id="metricSide"><option value="R">Right</option><option value="L">Left</option></select>
+            </div>
+            <div>
+              <label>Chart Metric</label>
+              <select id="chartMetricSelect">
+                <option value="driver_angVel" selected>Driver ω [rad/s]</option>
+                <option value="driver_linVel">Driver v [m/s]</option>
+                <option value="driver_angle">Driver θ [rad]</option>
+                <option value="driver_disp">Driver disp [m]</option>
+                <option value="proj_speed">Projectile speed [m/s]</option>
+                <option value="selected_metric">Selected metric (first)</option>
+              </select>
             </div>
           </div>
           <button class="btn btn-primary" onclick="addMetric()">Add</button>
@@ -415,30 +440,36 @@
           <div class="chiplist" id="metricChips"></div>
           <div class="divider"></div>
           <div class="metrics-grid" id="selectedMetricsPanel"></div>
-
           <div class="divider"></div>
           <div class="metric">
-            <div class="t">Live CV interpretation</div>
+            <div class="t">Live interpretation (plane-aware)</div>
             <div class="s" id="liveInterpretation">—</div>
           </div>
         </div>
       </div>
 
       <div class="card" style="margin-top:12px;">
-        <h3>Real-time Kinetics (Dual axis)</h3>
+        <h3>Charts (Discrete sample series)</h3>
         <div class="charts-grid">
           <div class="chart-card">
             <div class="chart-title">
-              <b>Force–Time [N] + Moment–Time [Nm]</b>
+              <b>Kinetics: Force–Time [N] + Moment–Time [Nm]</b>
               <span id="lblKinetics">F: 0 N | M: 0 Nm</span>
             </div>
             <canvas id="chartDual" class="chart"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">
+              <b>Kinematics: selected series vs time</b>
+              <span id="lblKinematics">—</span>
+            </div>
+            <canvas id="chartKinematics" class="chart"></canvas>
           </div>
         </div>
       </div>
 
       <div class="card" style="margin-top:12px;">
-        <button class="btn btn-primary" onclick="downloadData()">📊 Download XLSX (Profile • Kinematics • Projectile • Kinetics • Technical Model)</button>
+        <button class="btn btn-primary" onclick="downloadData()">📊 Download XLSX (Profile • Phase avg/peak per selected metric)</button>
       </div>
     </div>
 
@@ -455,7 +486,7 @@
           </div>
         </div>
         <p class="mini">
-          CV skill inference is heuristic: best results with tripod, good lighting, and projectile clearly visible.
+          Tip: for ω stability, keep the joint in frame, avoid motion blur, and use higher FPS uploads.
         </p>
       </div>
     </div>
@@ -474,32 +505,33 @@ let streamRef=null, animationId=null;
 
 let participants=[], currentParticipant=null;
 let isRecording=false;
-let sessionMeta={};
 
-let prevFrameTS=0;
 let prevKeypoints=null;
 let frameIndex=0;
-
-let prevAngleDriverDeg=null;
-let prevAngleMapDeg=new Map();
-
-let prevDriverPos=null;
-let cumDisp=0;
-
-let prevProjState=null;     // for projectile vel/acc
-let lastProjectiles=[];
 
 let detectedFPS=0, framesInSecond=0;
 let lastFPSUpdate=performance.now();
 
 let selectedMetrics=[];
 
+let lastProjectiles=[];
+let prevProjState=null;
+
 const FILTER_ORDER = 4;
 let forceStages = new Array(FILTER_ORDER).fill(0);
 let momentStages = new Array(FILTER_ORDER).fill(0);
 
-const chartSeries = { force:[], moment:[] };
-let lastChartDraw=0;
+// discrete series for charts
+const series = {
+  t: [], // seconds based on fpsUsed
+  force: [], moment: [],
+  driver_linVel: [], driver_angVel: [], driver_angle: [], driver_disp: [],
+  proj_speed: [],
+  // first selected metric convenience:
+  selected_metric: []
+};
+
+let chartLastDraw=0;
 
 const KP = {
   shoulder_L:5, shoulder_R:6, elbow_L:7, elbow_R:8, wrist_L:9, wrist_R:10,
@@ -510,6 +542,7 @@ const SEG_MASS = { thigh:0.10, shank:0.0465, foot:0.0145, upperArm:0.028, forear
 const SEG_K = { thigh:0.323, shank:0.302, foot:0.475, upperArm:0.322, forearm:0.303, hand:0.628 };
 
 let rec = resetRec();
+let sessionMeta = {};
 
 /* =========================
    Init
@@ -520,7 +553,7 @@ window.onload = async () => {
   ctx=overlay.getContext('2d');
 
   document.getElementById('participantName').value="Athlete 1";
-  addParticipant(true);
+  addParticipant(false);
 
   showStatus("Loading Neural Networks...", "info");
   try{
@@ -545,13 +578,13 @@ window.onload = async () => {
 /* =========================
    Participant
 ========================= */
-function addParticipant(silent=false){
+function addParticipant(showToast=true){
   const name=(document.getElementById('participantName').value||"").trim();
   const sex=document.getElementById('participantSex').value;
   const age=parseInt(document.getElementById('participantAge').value||"0");
   const mass=parseFloat(document.getElementById('participantMass').value||"0");
   const height=parseFloat(document.getElementById('participantHeight').value||"0");
-  if(!name||!mass||!height||!age){ if(!silent) showStatus("Fill Name, Age, Mass, Height.", "error"); return; }
+  if(!name||!mass||!height||!age){ if(showToast) showStatus("Fill Name, Age, Mass, Height.", "error"); return; }
 
   const existing=participants.find(p=>p.name===name);
   const profile={name,sex,age,mass,height};
@@ -567,7 +600,7 @@ function addParticipant(silent=false){
   });
   sel.value=name;
   currentParticipant=profile;
-  if(!silent) showStatus(`Participant set: ${name}`, "success");
+  if(showToast) showStatus(`Participant set: ${name}`, "success");
 }
 function onParticipantChange(){
   const sel=document.getElementById('selectedParticipant');
@@ -690,65 +723,51 @@ function resetSessionState(){
   isRecording=false;
   rec=resetRec();
 
-  prevFrameTS=0;
   prevKeypoints=null;
   frameIndex=0;
-
-  prevAngleDriverDeg=null;
-  prevAngleMapDeg.clear();
-
-  prevDriverPos=null;
-  cumDisp=0;
 
   prevProjState=null;
   lastProjectiles=[];
 
-  chartSeries.force=[]; chartSeries.moment=[];
-  lastChartDraw=0;
-
   forceStages=new Array(FILTER_ORDER).fill(0);
   momentStages=new Array(FILTER_ORDER).fill(0);
 
+  resetSeries();
+
   document.getElementById('lblKinetics').innerText="F: 0 N | M: 0 Nm";
+  document.getElementById('lblKinematics').innerText="—";
   document.getElementById('liveInterpretation').innerText="—";
 }
 
 /* =========================
-   Recording store (includes projectile kinematics)
+   Recording store
 ========================= */
 function resetRec(){
   return {
-    t:[],
-    driverLinVel_mps:[],
-    driverAngVel_rads:[],
-    driverAngle_rad:[],
-    driverDisp_m:[],
-    forceFilt_N:[],
-    momentFilt_Nm:[],
-
-    // projectile kinematics
-    projValid:[],
-    projX_m:[], projY_m:[],
-    projVx_mps:[], projVy_mps:[],
-    projSpeed_mps:[],
-    projAx_mps2:[], projAy_mps2:[],
-    projAccel_mps2:[],
-    projAngle_deg:[],
-
-    // skill inference helpers
-    effectorName:[],     // "wrist_R" / "ankle_L" etc
-    effectorDist_m:[],   // distance from projectile to effector
-    inferredSkill:[],    // per-frame guess (for debugging/export)
-
-    metricsDefs:[],
-    metrics:{}, // id -> array
+    fpsUsed: 60,
+    n: 0,
+    driver: "",
+    plane: "sagittal",
+    t: [],
+    forceN: [],
+    momentNm: [],
+    driver_linVel: [],
+    driver_angVel: [],
+    driver_angle: [],
+    driver_disp: [],
+    proj_speed: [],
+    metricsDefs: [],
+    metrics: {}, // id -> array
   };
+}
+function resetSeries(){
+  Object.keys(series).forEach(k => series[k] = []);
 }
 
 /* =========================
    Main loop
 ========================= */
-async function renderLoop(ts){
+async function renderLoop(){
   animationId=requestAnimationFrame(renderLoop);
   if(!video||video.paused||video.ended) return;
 
@@ -762,9 +781,6 @@ async function renderLoop(ts){
   }
 
   frameIndex++;
-  const tSec=(ts||performance.now())/1000;
-  const dt=prevFrameTS?clamp(tSec-prevFrameTS, 1/240, 0.2):(1/60);
-  prevFrameTS=tSec;
 
   let kp=null;
   try{
@@ -781,7 +797,7 @@ async function renderLoop(ts){
         const preds=await cocoModel.detect(video);
         const cls=document.getElementById('projClassHint').value;
         const minScore=parseFloat(document.getElementById('projMinScore').value);
-        lastProjectiles=preds.filter(p=>p.class===cls && p.score>=minScore).sort((a,b)=>b.score-a.score).slice(0,2);
+        lastProjectiles=preds.filter(p => p.class===cls && p.score>=minScore).sort((a,b)=>b.score-a.score).slice(0,1);
       }catch(_){}
     }
   }else lastProjectiles=[];
@@ -789,28 +805,43 @@ async function renderLoop(ts){
   // draw
   ctx.clearRect(0,0,overlay.width,overlay.height);
   if(kp) drawSkeleton(kp);
-  drawProjectile(lastProjectiles, dt);
+  drawProjectile(lastProjectiles);
 
   if(kp){
-    processSelectedMetrics(kp, dt);
+    const plane=document.getElementById('motionPlane').value;
 
-    const projState = computeProjectileKinematics(lastProjectiles, dt);
-    const kin = processDriverKinematics(kp, dt);
-    const kinets = processDriverKinetics(dt, tSec, kin);
+    const proj = computeProjectileSpeed(lastProjectiles);
+    const kin = computeDriverKinematics(kp, plane);
+    const kinets = computeDriverKinetics(kin);
 
-    const skill = inferSkillFromCV(kp, projState, kin);
-    const liveText = buildLiveInterpretation(kin, kinets, projState, skill);
+    processSelectedMetrics(kp, plane);
+
+    // live display
+    document.getElementById('lblKinetics').innerText =
+      `F: ${(kinets.forceN||0).toFixed(0)} N | M: ${(kinets.momentNm||0).toFixed(4)} Nm`;
+
+    const liveText = [
+      `Plane: ${plane}`,
+      `Driver: ${kin.driver}`,
+      `v [m/s]: ${kin.linVel.toFixed(3)} | ω [rad/s]: ${kin.angVel.toFixed(3)} | θ [rad]: ${kin.angleRad.toFixed(3)} | disp [m]: ${kin.disp.toFixed(3)}`,
+      `Projectile speed [m/s]: ${proj.speed.toFixed(3)}`
+    ].join("\n");
     document.getElementById('liveInterpretation').innerText = liveText;
 
-    if(isRecording) recordFrame(tSec, kp, dt, kin, kinets, projState, skill);
+    // update discrete series continuously (even when not recording) so charts are readable
+    pushSeriesContinuous(kin, kinets, proj);
+
+    if(isRecording){
+      recordSample(kin, kinets, proj, plane);
+    }
 
     prevKeypoints=kp;
-    setStatusText("Running");
+    setStatusText(isRecording ? "Recording..." : "Running");
   } else {
-    setStatusText("No pose detected (framing/lighting)");
+    setStatusText("No pose detected");
   }
 
-  throttleChartDraw(tSec);
+  drawChartsThrottled();
 }
 
 /* =========================
@@ -844,7 +875,6 @@ function drawSkeleton(kp){
     }
   });
 }
-
 function drawProjectile(projs){
   if(!projs||!projs.length) return;
   ctx.save();
@@ -852,7 +882,6 @@ function drawProjectile(projs){
   ctx.strokeStyle="orange";
   ctx.fillStyle="orange";
   ctx.font="14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-
   projs.forEach(p=>{
     const [x,y,w,h]=p.bbox;
     ctx.strokeRect(x,y,w,h);
@@ -862,73 +891,54 @@ function drawProjectile(projs){
 }
 
 /* =========================
-   Scale / indices
+   Scale / helpers
 ========================= */
 function getPxToMeter(){
   const hM=currentParticipant?(currentParticipant.height/100):1.75;
   const denom=Math.max(240, overlay.height*0.80);
   return hM/denom;
 }
-function getJointIndex(joint, side){
-  const map={
-    shoulder_R:KP.shoulder_R, shoulder_L:KP.shoulder_L,
-    elbow_R:KP.elbow_R, elbow_L:KP.elbow_L,
-    wrist_R:KP.wrist_R, wrist_L:KP.wrist_L,
-    hip_R:KP.hip_R, hip_L:KP.hip_L,
-    knee_R:KP.knee_R, knee_L:KP.knee_L,
-    ankle_R:KP.ankle_R, ankle_L:KP.ankle_L
-  };
-  const key=`${joint}_${side}`;
-  return (key in map)?map[key]:null;
+function clamp(x,a,b){ return Math.max(a, Math.min(b,x)); }
+function round(x,dp){ if(!isFinite(x)) return 0; const p=Math.pow(10,dp); return Math.round(x*p)/p; }
+function mean(arr){ if(!arr || !arr.length) return 0; return arr.reduce((s,x)=>s+(+x||0),0)/arr.length; }
+function maxAbs(arr){ if(!arr || !arr.length) return 0; let m=0; arr.forEach(x=>{ const a=Math.abs(+x||0); if(a>m) m=a; }); return m; }
+function lowPass(prev, curr, dt, fc){
+  const rc = 1.0 / (2 * Math.PI * fc);
+  const alpha = dt / (rc + dt);
+  return prev + alpha * (curr - prev);
+}
+function cascadedLowPass(x, stages, dt, fc){
+  let y=x;
+  for(let i=0;i<stages.length;i++){
+    stages[i]=lowPass(stages[i], y, dt, fc);
+    y=stages[i];
+  }
+  return y;
+}
+function idxOf(joint, side){
+  const k = `${joint}_${side}`;
+  return KP[k] ?? null;
 }
 
 /* =========================
-   Selected metrics
+   ANGLE + ω (fixed)
+   - For shoulder/elbow/hip/knee: 3pt joint angle
+   - For wrist/ankle: segment orientation angle (2pt), then ω from Δorientation
 ========================= */
-function processSelectedMetrics(kp, dt){
-  selectedMetrics.forEach(m=>{
-    const v=computeMetricValue(kp, m, dt);
-    const el=document.getElementById(`val_${m.id}`);
-    if(el) el.innerText=isFinite(v)?v.toFixed(3):"--";
-  });
-}
+const angleState = new Map(); // key -> {prevRad, velStage[]}
 
-function computeMetricValue(kp, m, dt){
-  if(m.type==="angle") return getJointAngleDeg(kp, m.joint, m.side);
-  if(m.type==="linVel"){
-    const idx=getJointIndex(m.joint, m.side);
-    return idx==null?NaN:getLinearVelMps(kp, idx, dt);
-  }
-  if(m.type==="angVel"){
-    const angDeg=getJointAngleDeg(kp, m.joint, m.side);
-    const prevDeg=prevAngleMapDeg.get(m.id);
-    prevAngleMapDeg.set(m.id, angDeg);
-    if(prevDeg==null || !isFinite(prevDeg) || !isFinite(angDeg)) return 0;
-
-    let dDeg=angDeg-prevDeg;
-    if(dDeg>180) dDeg-=360;
-    if(dDeg<-180) dDeg+=360;
-
-    const dRad = dDeg * Math.PI / 180;
-    return dRad / Math.max(1e-4, dt); // rad/s
-  }
-  return NaN;
-}
-
-function getJointAngleDeg(kp, joint, side){
+function getJointAngleRad(kp, joint, side){
+  // returns internal angle in radians for supported joints
   const minScore=0.30;
   let a=null,b=null,c=null;
 
-  if(joint==="elbow"){ a=`shoulder_${side}`; b=`elbow_${side}`; c=`wrist_${side}`; }
-  else if(joint==="knee"){ a=`hip_${side}`; b=`knee_${side}`; c=`ankle_${side}`; }
-  else if(joint==="hip"){ a=`shoulder_${side}`; b=`hip_${side}`; c=`knee_${side}`; }
-  else if(joint==="shoulder"){ a=`hip_${side}`; b=`shoulder_${side}`; c=`elbow_${side}`; }
-  else if(joint==="ankle"){ a=`knee_${side}`; b=`ankle_${side}`; c=`foot_${side}`; return NaN; } // not supported (no foot kp in MoveNet)
+  if(joint==="elbow"){ a=idxOf("shoulder",side); b=idxOf("elbow",side); c=idxOf("wrist",side); }
+  else if(joint==="knee"){ a=idxOf("hip",side); b=idxOf("knee",side); c=idxOf("ankle",side); }
+  else if(joint==="hip"){ a=idxOf("shoulder",side); b=idxOf("hip",side); c=idxOf("knee",side); }
+  else if(joint==="shoulder"){ a=idxOf("hip",side); b=idxOf("shoulder",side); c=idxOf("elbow",side); }
   else return NaN;
 
-  const pA=kp[getJointIndex(a.split("_")[0], a.split("_")[1])];
-  const pB=kp[getJointIndex(b.split("_")[0], b.split("_")[1])];
-  const pC=kp[getJointIndex(c.split("_")[0], c.split("_")[1])];
+  const pA=kp[a], pB=kp[b], pC=kp[c];
   if(!pA||!pB||!pC) return NaN;
   if(pA.score<minScore||pB.score<minScore||pC.score<minScore) return NaN;
 
@@ -936,121 +946,161 @@ function getJointAngleDeg(kp, joint, side){
     Math.atan2(pC.y - pB.y, pC.x - pB.x) -
     Math.atan2(pA.y - pB.y, pA.x - pB.x);
 
-  let deg = Math.abs(rad * 180.0 / Math.PI);
-  if(deg > 180) deg = 360 - deg;
-  return deg;
+  let ang = Math.abs(rad);
+  if(ang > Math.PI) ang = 2*Math.PI - ang;
+  return ang; // [0, pi]
 }
 
-function getLinearVelMps(kp, idx, dt){
-  if(!prevKeypoints || !kp[idx] || !prevKeypoints[idx]) return 0;
+function getSegmentOrientationRad(kp, seg, side){
+  // seg: "forearm" (elbow->wrist) OR "shank" (knee->ankle)
+  const minScore=0.30;
+  let a=null,b=null;
+  if(seg==="forearm"){ a=idxOf("elbow",side); b=idxOf("wrist",side); }
+  else if(seg==="shank"){ a=idxOf("knee",side); b=idxOf("ankle",side); }
+  else return NaN;
+
+  const pA=kp[a], pB=kp[b];
+  if(!pA||!pB) return NaN;
+  if(pA.score<minScore||pB.score<minScore) return NaN;
+
+  // orientation in image plane
+  return Math.atan2(pB.y - pA.y, pB.x - pA.x); // [-pi, pi]
+}
+
+function unwrapAngleRad(curr, prev){
+  // unwrap to avoid jumps near pi boundary
+  let d = curr - prev;
+  if(d > Math.PI) curr -= 2*Math.PI;
+  if(d < -Math.PI) curr += 2*Math.PI;
+  return curr;
+}
+
+function getAngularVelocityRadS(key, currRad, dt){
+  if(!isFinite(currRad) || dt<=0) return 0;
+
+  const hz=parseFloat(document.getElementById("cutoffHz").value);
+  const st = angleState.get(key) || { prevRad: currRad, velStages: new Array(2).fill(0) };
+
+  // unwrap for orientation angles (segment)
+  let radNow = currRad;
+  if(st.prevRad != null) radNow = unwrapAngleRad(currRad, st.prevRad);
+
+  const wRaw = (radNow - st.prevRad) / Math.max(1e-4, dt);
+
+  // extra smoothing for ω
+  const wFilt = cascadedLowPass(wRaw, st.velStages, dt, Math.max(2, hz));
+
+  st.prevRad = radNow;
+  angleState.set(key, st);
+  return wFilt;
+}
+
+function getLinearVelMps(kp, joint, side){
+  if(!prevKeypoints) return 0;
+  const idx=idxOf(joint, side);
+  if(idx==null) return 0;
   const curr=kp[idx], prev=prevKeypoints[idx];
-  if(curr.score<0.30 || prev.score<0.30) return 0;
-  const scale=getPxToMeter();
-  const dx=(curr.x-prev.x)*scale;
-  const dy=(curr.y-prev.y)*scale;
-  return Math.hypot(dx,dy)/Math.max(1e-4, dt);
+  if(!curr||!prev||curr.score<0.30||prev.score<0.30) return 0;
+  const s=getPxToMeter();
+  const dx=(curr.x-prev.x)*s;
+  const dy=(curr.y-prev.y)*s;
+  // dt for non-recording charts uses fpsUsed; for live, approximate from detectedFPS
+  const fps = Math.max(1, detectedFPS || parseInt(document.getElementById("fpsSelection").value) || 60);
+  const dt=1/fps;
+  return Math.hypot(dx,dy)/dt;
+}
+
+/* =========================
+   Projectile speed (simple)
+========================= */
+function computeProjectileSpeed(projs){
+  const out={speed:0};
+  if(!projs||!projs.length){ prevProjState=null; return out; }
+
+  const [x,y,w,h]=projs[0].bbox;
+  const cx=x+w/2, cy=y+h/2;
+  const s=getPxToMeter();
+  const xM=cx*s, yM=cy*s;
+
+  const fps = Math.max(1, detectedFPS || parseInt(document.getElementById("fpsSelection").value) || 60);
+  const dt=1/fps;
+
+  if(prevProjState){
+    const vx=(xM-prevProjState.x)/dt;
+    const vy=(yM-prevProjState.y)/dt;
+    out.speed=Math.hypot(vx,vy);
+  }
+  prevProjState={x:xM,y:yM};
+  return out;
 }
 
 /* =========================
    Driver kinematics
 ========================= */
-function processDriverKinematics(kp, dt){
-  const jName=document.getElementById('kinJoint').value;
-  const side=document.getElementById('kinSide').value;
-  const idx=getJointIndex(jName, side);
-  if(idx==null) return null;
+let driverDisp=0;
+let prevDriverXY=null;
 
-  const p=kp[idx];
-  if(!p || p.score<0.30) return null;
+function computeDriverKinematics(kp, plane){
+  const jName=document.getElementById("kinJoint").value;
+  const side=document.getElementById("kinSide").value;
 
-  const v_mps = getLinearVelMps(kp, idx, dt);
+  const fpsUsed = Math.max(1, detectedFPS || parseInt(document.getElementById("fpsSelection").value) || 60);
+  const dt = 1/fpsUsed;
 
-  const angDeg = getJointAngleDeg(kp, jName, side);
-  let w_radps = 0;
-  if(prevAngleDriverDeg != null && isFinite(prevAngleDriverDeg) && isFinite(angDeg)){
-    let dDeg = angDeg - prevAngleDriverDeg;
-    if(dDeg>180) dDeg-=360;
-    if(dDeg<-180) dDeg+=360;
-    w_radps = (dDeg * Math.PI/180) / Math.max(1e-4, dt);
+  // angleRad:
+  let angleRad=0;
+  let angVel=0;
+
+  if(jName==="wrist"){
+    // segment orientation ω from forearm
+    const ori = getSegmentOrientationRad(kp, "forearm", side);
+    angleRad = isFinite(ori) ? ori : 0;
+    angVel = getAngularVelocityRadS(`driver_seg_forearm_${side}`, angleRad, dt);
+  } else if(jName==="ankle"){
+    // segment orientation ω from shank
+    const ori = getSegmentOrientationRad(kp, "shank", side);
+    angleRad = isFinite(ori) ? ori : 0;
+    angVel = getAngularVelocityRadS(`driver_seg_shank_${side}`, angleRad, dt);
+  } else {
+    const ang = getJointAngleRad(kp, jName, side);
+    angleRad = isFinite(ang) ? ang : 0;
+    angVel = getAngularVelocityRadS(`driver_joint_${jName}_${side}`, angleRad, dt);
   }
-  prevAngleDriverDeg = angDeg;
 
-  const scale=getPxToMeter();
-  if(prevDriverPos && prevDriverPos.ok){
-    const dx=(p.x-prevDriverPos.x)*scale;
-    const dy=(p.y-prevDriverPos.y)*scale;
-    cumDisp += Math.hypot(dx,dy);
+  const linVel = getLinearVelMps(kp, jName==="wrist" ? "wrist" : (jName==="ankle" ? "ankle" : jName), side);
+
+  // displacement (integrate)
+  const idx = idxOf(jName==="wrist" ? "wrist" : (jName==="ankle" ? "ankle" : jName), side);
+  const p = idx!=null ? kp[idx] : null;
+  if(p && p.score>0.30){
+    const s=getPxToMeter();
+    if(prevDriverXY){
+      const dx=(p.x-prevDriverXY.x)*s;
+      const dy=(p.y-prevDriverXY.y)*s;
+      driverDisp += Math.hypot(dx,dy);
+    }
+    prevDriverXY={x:p.x,y:p.y};
   }
-  prevDriverPos={x:p.x,y:p.y,ok:true};
 
   return {
     driver: `${jName}_${side}`,
-    v_mps,
-    angle_rad: (isFinite(angDeg)?angDeg:0) * Math.PI/180,
-    angVel_radps: w_radps,
-    disp_m: cumDisp
+    linVel,
+    angleRad,
+    angVel,
+    disp: driverDisp,
+    fpsUsed,
+    plane
   };
 }
 
 /* =========================
-   Projectile kinematics (position/velocity/acceleration)
+   Driver kinetics (smoothed)
 ========================= */
-function computeProjectileKinematics(projs, dt){
-  const out={
-    valid:false,
-    x_m:0, y_m:0,
-    vx_mps:0, vy_mps:0,
-    ax_mps2:0, ay_mps2:0,
-    speed_mps:0, accel_mps2:0,
-    angle_deg:0
-  };
-  if(!projs || !projs.length){
-    prevProjState=null;
-    return out;
-  }
+function computeDriverKinetics(kin){
+  if(!currentParticipant || !kin) return {forceN:0, momentNm:0};
 
-  const best=projs[0];
-  const [x,y,w,h]=best.bbox;
-  const cx=x+w/2, cy=y+h/2;
-
-  const s=getPxToMeter();
-  out.valid=true;
-  out.x_m = cx*s;
-  out.y_m = cy*s;
-
-  // velocity
-  if(prevProjState && prevProjState.valid){
-    const vx=(out.x_m - prevProjState.x_m)/Math.max(1e-4, dt);
-    const vy=(out.y_m - prevProjState.y_m)/Math.max(1e-4, dt);
-    // mild smoothing
-    const a=0.35;
-    out.vx_mps = a*vx + (1-a)*(prevProjState.vx_mps||0);
-    out.vy_mps = a*vy + (1-a)*(prevProjState.vy_mps||0);
-  }
-
-  out.speed_mps = Math.hypot(out.vx_mps, out.vy_mps);
-
-  // acceleration
-  if(prevProjState && prevProjState.valid){
-    const ax=(out.vx_mps - (prevProjState.vx_mps||0))/Math.max(1e-4, dt);
-    const ay=(out.vy_mps - (prevProjState.vy_mps||0))/Math.max(1e-4, dt);
-    const a2=0.35;
-    out.ax_mps2 = a2*ax + (1-a2)*(prevProjState.ax_mps2||0);
-    out.ay_mps2 = a2*ay + (1-a2)*(prevProjState.ay_mps2||0);
-  }
-  out.accel_mps2 = Math.hypot(out.ax_mps2, out.ay_mps2);
-
-  out.angle_deg = Math.atan2(-out.vy_mps, out.vx_mps)*180/Math.PI;
-
-  prevProjState = { ...out };
-  return out;
-}
-
-/* =========================
-   Kinetics (extra low-pass smoothing)
-========================= */
-function processDriverKinetics(dt, tSec, kin){
-  if(!currentParticipant || !kin) return null;
+  const hz=parseFloat(document.getElementById("cutoffHz").value);
+  const dt=1/Math.max(1, kin.fpsUsed);
 
   const driverJoint = kin.driver.split("_")[0];
 
@@ -1063,167 +1113,223 @@ function processDriverKinetics(dt, tSec, kin){
 
   const segMass = currentParticipant.mass * (SEG_MASS[seg] || 0.10);
 
-  const prevV = rec.driverLinVel_mps.length ? rec.driverLinVel_mps[rec.driverLinVel_mps.length-1] : kin.v_mps;
-  const accel = Math.abs(kin.v_mps - prevV) / Math.max(1e-4, dt);
+  const prevV = rec.driver_linVel.length ? rec.driver_linVel[rec.driver_linVel.length-1] : kin.linVel;
+  const accel = Math.abs(kin.linVel - prevV) / Math.max(1e-4, dt);
   const forceRaw = segMass * accel;
 
-  const prevW = rec.driverAngVel_rads.length ? rec.driverAngVel_rads[rec.driverAngVel_rads.length-1] : kin.angVel_radps;
-  const alpha = (kin.angVel_radps - prevW) / Math.max(1e-4, dt); // rad/s^2
+  const prevW = rec.driver_angVel.length ? rec.driver_angVel[rec.driver_angVel.length-1] : kin.angVel;
+  const alpha = (kin.angVel - prevW) / Math.max(1e-4, dt);
 
   const L = estimateSegmentLengthM(seg);
   const k = SEG_K[seg] || 0.30;
   const I = segMass * Math.pow(k * L, 2);
   const momentRaw = I * alpha;
 
-  const hz = parseFloat(document.getElementById('cutoffHz').value);
+  const forceN = cascadedLowPass(forceRaw, forceStages, dt, hz);
+  const momentNm = cascadedLowPass(momentRaw, momentStages, dt, hz);
 
-  const forceFilt = cascadedLowPass(forceRaw, forceStages, dt, hz);
-  const momentFilt = cascadedLowPass(momentRaw, momentStages, dt, hz);
-
-  document.getElementById('lblKinetics').innerText =
-    `F: ${forceFilt.toFixed(0)} N | M: ${momentFilt.toFixed(3)} Nm`;
-
-  pushChart('force', tSec, forceFilt);
-  pushChart('moment', tSec, momentFilt);
-
-  return { forceFilt_N: forceFilt, momentFilt_Nm: momentFilt };
+  return { forceN, momentNm };
 }
 function estimateSegmentLengthM(seg){
   const h = currentParticipant ? (currentParticipant.height/100) : 1.75;
   const frac = { thigh:0.245, shank:0.246, foot:0.152, upperArm:0.186, forearm:0.146, hand:0.108, trunk:0.288 };
   return h * (frac[seg] || 0.20);
 }
-function lowPass(prev, curr, dt, fc){
-  const rc = 1.0 / (2 * Math.PI * fc);
-  const alpha = dt / (rc + dt);
-  return prev + alpha * (curr - prev);
-}
-function cascadedLowPass(x, stages, dt, fc){
-  let y = x;
-  for(let i=0;i<stages.length;i++){
-    stages[i] = lowPass(stages[i], y, dt, fc);
-    y = stages[i];
-  }
-  return y;
-}
 
 /* =========================
-   CV Skill Inference (heuristics)
-   - Uses projectile + closest effector (wrist/ankle)
-   - Uses whether both wrists are near (two-hand)
+   Selected metrics (fixed ω)
 ========================= */
-function inferSkillFromCV(kp, proj, kin){
-  if(!proj.valid){
-    return { skill:"No projectile / Unknown", confidence:0.2, effector:"—", dist_m:null, rationale:"No reliable projectile track." };
-  }
-
-  const s=getPxToMeter();
-  const joints=[
-    {name:"wrist_R", idx:KP.wrist_R},
-    {name:"wrist_L", idx:KP.wrist_L},
-    {name:"ankle_R", idx:KP.ankle_R},
-    {name:"ankle_L", idx:KP.ankle_L},
-  ];
-
-  const px = proj.x_m / s, py = proj.y_m / s; // back to pixel for distance by kp coords
-  const dists=[];
-  joints.forEach(j=>{
-    const p=kp[j.idx];
-    if(p && p.score>0.30){
-      const dx=(p.x-px)*s;
-      const dy=(p.y-py)*s;
-      dists.push({name:j.name, d:Math.hypot(dx,dy)});
-    }
+function processSelectedMetrics(kp, plane){
+  selectedMetrics.forEach(m=>{
+    const v = computeMetricValue(kp, m);
+    const el=document.getElementById(`val_${m.id}`);
+    if(el) el.innerText = isFinite(v) ? v.toFixed(3) : "--";
   });
-  dists.sort((a,b)=>a.d-b.d);
-  const best=dists.length?dists[0]:{name:"—",d:999};
+}
+function computeMetricValue(kp, m){
+  const side=m.side;
 
-  // check two-hand proximity
-  const wr = dists.find(x=>x.name==="wrist_R")?.d ?? 999;
-  const wl = dists.find(x=>x.name==="wrist_L")?.d ?? 999;
-  const bothHandsNear = (wr<0.20 && wl<0.20); // 20 cm threshold (scaled)
-  const ankleNear = best.name.startsWith("ankle") && best.d < 0.25;
-  const wristNear = best.name.startsWith("wrist") && best.d < 0.25;
+  const fpsUsed = Math.max(1, detectedFPS || parseInt(document.getElementById("fpsSelection").value) || 60);
+  const dt = 1/fpsUsed;
 
-  // timing cue: high ω (rotation) + wrist near -> throw/strike
-  const w = Math.abs(kin?.angVel_radps||0);
-  const vproj = proj.speed_mps;
+  if(m.type==="linVel"){
+    return getLinearVelMps(kp, m.joint==="wrist" ? "wrist" : (m.joint==="ankle" ? "ankle" : m.joint), side);
+  }
 
-  let skill="Unknown projectile skill";
-  let confidence=0.35;
-  let rationale="Projectile tracked, but pattern unclear.";
-
-  if(ankleNear){
-    skill="Kick (instep/strike)";
-    confidence=0.75;
-    rationale="Projectile closest to ankle during event window → likely foot contact skill.";
-  } else if(bothHandsNear){
-    skill="Two-hand shot / throw";
-    confidence=0.70;
-    rationale="Both wrists near projectile → likely two-hand release/shot.";
-  } else if(wristNear && w>6){
-    // differentiate throw vs strike via projectile angle and “hand-path”
-    if(vproj>0 && proj.angle_deg>-20 && proj.angle_deg<70){
-      skill="Overhand throw / pitch";
-      confidence=0.72;
-      rationale="Projectile closest to wrist with high joint ω → likely throw-like skill.";
-    } else {
-      skill="Strike / swing (bat/racket-like proxy)";
-      confidence=0.60;
-      rationale="Wrist contact + high ω, but projectile direction suggests strike/swing timing.";
+  if(m.type==="angle"){
+    if(m.joint==="wrist"){
+      const ori=getSegmentOrientationRad(kp,"forearm",side);
+      return isFinite(ori) ? (ori*180/Math.PI) : NaN;
     }
-  } else if(wristNear){
-    skill="Underhand toss / gentle throw";
-    confidence=0.55;
-    rationale="Projectile closest to wrist but ω is low → likely toss/placement.";
+    if(m.joint==="ankle"){
+      const ori=getSegmentOrientationRad(kp,"shank",side);
+      return isFinite(ori) ? (ori*180/Math.PI) : NaN;
+    }
+    const ang=getJointAngleRad(kp,m.joint,side);
+    return isFinite(ang) ? (ang*180/Math.PI) : NaN;
   }
 
-  return { skill, confidence, effector: best.name, dist_m: best.d, rationale };
+  if(m.type==="angVel"){
+    if(m.joint==="wrist"){
+      const ori=getSegmentOrientationRad(kp,"forearm",side);
+      return getAngularVelocityRadS(`m_seg_forearm_${side}`, isFinite(ori)?ori:0, dt);
+    }
+    if(m.joint==="ankle"){
+      const ori=getSegmentOrientationRad(kp,"shank",side);
+      return getAngularVelocityRadS(`m_seg_shank_${side}`, isFinite(ori)?ori:0, dt);
+    }
+    const ang=getJointAngleRad(kp,m.joint,side);
+    return getAngularVelocityRadS(`m_joint_${m.joint}_${side}`, isFinite(ang)?ang:0, dt);
+  }
+
+  return NaN;
 }
 
 /* =========================
-   Live interpretation
+   Discrete series push + charts
 ========================= */
-function buildLiveInterpretation(kin, kinets, proj, skill){
-  const parts=[];
-  parts.push(`Skill guess: ${skill.skill} (conf ${skill.confidence.toFixed(2)})`);
-  parts.push(`Effector: ${skill.effector} dist ${skill.dist_m!=null?skill.dist_m.toFixed(3):"—"} m`);
-  if(kin){
-    parts.push(`Driver: ${kin.driver}`);
-    parts.push(`v [m/s]: ${kin.v_mps.toFixed(3)} | ω [rad/s]: ${kin.angVel_radps.toFixed(3)} | θ [rad]: ${kin.angle_rad.toFixed(3)} | disp [m]: ${kin.disp_m.toFixed(3)}`);
+function pushSeriesContinuous(kin, kinets, proj){
+  const fpsUsed = kin.fpsUsed;
+  const t = series.t.length ? series.t[series.t.length-1] + (1/fpsUsed) : 0;
+
+  series.t.push(t);
+  series.force.push(kinets.forceN||0);
+  series.moment.push(kinets.momentNm||0);
+
+  series.driver_linVel.push(kin.linVel||0);
+  series.driver_angVel.push(kin.angVel||0);
+  series.driver_angle.push(kin.angleRad||0);
+  series.driver_disp.push(kin.disp||0);
+
+  series.proj_speed.push(proj.speed||0);
+
+  // first selected metric only (for quick plotting)
+  if(selectedMetrics.length){
+    const first=selectedMetrics[0];
+    const val = computeMetricValue(prevKeypoints||[], first);
+    series.selected_metric.push(isFinite(val)?val:0);
+  } else {
+    series.selected_metric.push(0);
   }
-  if(proj.valid){
-    parts.push(`Projectile: speed [m/s] ${proj.speed_mps.toFixed(3)} | angle [deg] ${proj.angle_deg.toFixed(1)} | a [m/s²] ${proj.accel_mps2.toFixed(2)}`);
+
+  // trim by window seconds
+  const win=parseInt(document.getElementById("windowSeconds").value);
+  while(series.t.length && series.t[0] < t - win){
+    Object.keys(series).forEach(k=>series[k].shift());
   }
-  if(kinets){
-    parts.push(`Force [N]: ${kinets.forceFilt_N.toFixed(0)} | Moment [Nm]: ${kinets.momentFilt_Nm.toFixed(4)}`);
+}
+
+function drawChartsThrottled(){
+  const now=performance.now()/1000;
+  if(now-chartLastDraw < 0.10) return;
+  chartLastDraw=now;
+
+  drawDualAxisChart("chartDual", series.t, series.force, series.moment);
+  drawKinematicsChart();
+}
+
+function drawDualAxisChart(canvasId, tArr, fArr, mArr){
+  const c=document.getElementById(canvasId);
+  const g=c.getContext("2d");
+  const w=c.width=c.clientWidth;
+  const h=c.height=c.clientHeight;
+
+  g.clearRect(0,0,w,h);
+  g.strokeStyle="#eee";
+  g.beginPath(); g.moveTo(0,h/2); g.lineTo(w,h/2); g.stroke();
+
+  if(tArr.length<2) return;
+  const tMin=tArr[0], tMax=tArr[tArr.length-1];
+  const fMax=Math.max(1, maxAbs(fArr));
+  const mMax=Math.max(1, maxAbs(mArr));
+
+  // Force (blue)
+  g.strokeStyle="#667eea"; g.lineWidth=2; g.beginPath();
+  for(let i=0;i<tArr.length;i++){
+    const x=((tArr[i]-tMin)/(tMax-tMin))*w;
+    const y=h-((fArr[i]/(fMax*1.2))*(h/2)+h/2);
+    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
   }
-  parts.push(`Why: ${skill.rationale}`);
-  return parts.join("\n");
+  g.stroke();
+
+  // Moment (red)
+  g.strokeStyle="#ef4444"; g.lineWidth=2; g.beginPath();
+  for(let i=0;i<tArr.length;i++){
+    const x=((tArr[i]-tMin)/(tMax-tMin))*w;
+    const y=h-((mArr[i]/(mMax*1.2))*(h/2)+h/2);
+    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+  }
+  g.stroke();
+
+  g.fillStyle="#666";
+  g.font="12px system-ui";
+  g.fillText("Force [N] (blue)", 10, 14);
+  const txt="Moment [Nm] (red)";
+  g.fillText(txt, w - g.measureText(txt).width - 10, 14);
+}
+
+function drawKinematicsChart(){
+  const c=document.getElementById("chartKinematics");
+  const g=c.getContext("2d");
+  const w=c.width=c.clientWidth;
+  const h=c.height=c.clientHeight;
+  g.clearRect(0,0,w,h);
+
+  if(series.t.length<2) return;
+
+  const sel=document.getElementById("chartMetricSelect").value;
+  let yArr=series.driver_angVel;
+  let label="Driver ω [rad/s]";
+  if(sel==="driver_linVel"){ yArr=series.driver_linVel; label="Driver v [m/s]"; }
+  if(sel==="driver_angle"){ yArr=series.driver_angle; label="Driver θ [rad]"; }
+  if(sel==="driver_disp"){ yArr=series.driver_disp; label="Driver disp [m]"; }
+  if(sel==="proj_speed"){ yArr=series.proj_speed; label="Projectile speed [m/s]"; }
+  if(sel==="selected_metric"){ yArr=series.selected_metric; label="Selected metric (first)"; }
+
+  document.getElementById("lblKinematics").innerText = `${label} | fps≈${detectedFPS||"-"}`;
+
+  const tMin=series.t[0], tMax=series.t[series.t.length-1];
+  const yMax=Math.max(1e-6, maxAbs(yArr));
+
+  // grid
+  g.strokeStyle="#eee"; g.beginPath(); g.moveTo(0,h/2); g.lineTo(w,h/2); g.stroke();
+
+  g.strokeStyle="#10b981"; g.lineWidth=2; g.beginPath();
+  for(let i=0;i<series.t.length;i++){
+    const x=((series.t[i]-tMin)/(tMax-tMin))*w;
+    const y=h-((yArr[i]/(yMax*1.2))*(h/2)+h/2);
+    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+  }
+  g.stroke();
+
+  g.fillStyle="#666"; g.font="12px system-ui";
+  g.fillText(label, 10, 14);
 }
 
 /* =========================
-   Recording
+   Recording (phase-ready)
+   - discrete time by fpsUsed: t = i / fpsUsed
 ========================= */
 function toggleRecording(){
-  const btn=document.getElementById('recordBtn');
+  const btn=document.getElementById("recordBtn");
   if(!isRecording){
     if(!currentParticipant) return showStatus("Set a participant first.", "error");
+
     isRecording=true;
-
     rec=resetRec();
-    rec.metricsDefs = selectedMetrics.map(m => ({...m, units: metricUnits(m.type)}));
+    rec.fpsUsed = Math.max(1, detectedFPS || parseInt(document.getElementById("fpsSelection").value) || 60);
+    rec.driver = `${document.getElementById("kinJoint").value}_${document.getElementById("kinSide").value}`;
+    rec.plane = document.getElementById("motionPlane").value;
+
+    rec.metricsDefs = selectedMetrics.map(m=>({ ...m, units: unitsFor(m) }));
     rec.metrics = {};
-    rec.metricsDefs.forEach(m => rec.metrics[m.id] = []);
+    rec.metricsDefs.forEach(m=> rec.metrics[m.id]=[]);
 
-    prevAngleDriverDeg=null;
-    prevAngleMapDeg.clear();
-
-    prevDriverPos=null;
-    cumDisp=0;
-
+    // reset states
+    angleState.clear();
+    driverDisp=0;
+    prevDriverXY=null;
     prevProjState=null;
-
     forceStages=new Array(FILTER_ORDER).fill(0);
     momentStages=new Array(FILTER_ORDER).fill(0);
 
@@ -1235,452 +1341,207 @@ function toggleRecording(){
     isRecording=false;
     btn.textContent="Start Recording";
     btn.className="btn btn-success";
-    showStatus(`Recording saved. ${rec.t.length} samples.`, "success");
+    showStatus(`Recording saved. ${rec.n} samples.`, "success");
     setStatusText("Running");
   }
 }
 
-function recordFrame(tSec, kp, dt, kin, kinets, proj, skill){
-  if(!kin) return;
+function recordSample(kin, kinets, proj, plane){
+  const i = rec.n;
+  const t = i / rec.fpsUsed;
 
-  rec.t.push(tSec);
+  rec.t.push(t);
+  rec.forceN.push(kinets.forceN||0);
+  rec.momentNm.push(kinets.momentNm||0);
 
-  rec.driverLinVel_mps.push(kin.v_mps || 0);
-  rec.driverAngVel_rads.push(kin.angVel_radps || 0);
-  rec.driverAngle_rad.push(kin.angle_rad || 0);
-  rec.driverDisp_m.push(kin.disp_m || 0);
+  rec.driver_linVel.push(kin.linVel||0);
+  rec.driver_angVel.push(kin.angVel||0);
+  rec.driver_angle.push(kin.angleRad||0);
+  rec.driver_disp.push(kin.disp||0);
 
-  rec.forceFilt_N.push(kinets?.forceFilt_N || 0);
-  rec.momentFilt_Nm.push(kinets?.momentFilt_Nm || 0);
-
-  // projectile
-  rec.projValid.push(proj.valid?1:0);
-  rec.projX_m.push(proj.valid?proj.x_m:0);
-  rec.projY_m.push(proj.valid?proj.y_m:0);
-  rec.projVx_mps.push(proj.valid?proj.vx_mps:0);
-  rec.projVy_mps.push(proj.valid?proj.vy_mps:0);
-  rec.projSpeed_mps.push(proj.valid?proj.speed_mps:0);
-  rec.projAx_mps2.push(proj.valid?proj.ax_mps2:0);
-  rec.projAy_mps2.push(proj.valid?proj.ay_mps2:0);
-  rec.projAccel_mps2.push(proj.valid?proj.accel_mps2:0);
-  rec.projAngle_deg.push(proj.valid?proj.angle_deg:0);
-
-  // skill inference logging
-  rec.effectorName.push(skill.effector||"—");
-  rec.effectorDist_m.push(isFinite(skill.dist_m)?skill.dist_m:0);
-  rec.inferredSkill.push(skill.skill||"Unknown");
+  rec.proj_speed.push(proj.speed||0);
 
   // selected metrics
-  if(rec.metricsDefs && rec.metrics){
-    rec.metricsDefs.forEach(m=>{
-      let val = computeMetricValue(kp, m, dt);
-      if(!isFinite(val)) val = 0;
-      rec.metrics[m.id].push(val);
-    });
-  }
+  rec.metricsDefs.forEach(def=>{
+    const v = computeMetricValue(prevKeypoints||[], def);
+    rec.metrics[def.id].push(isFinite(v)?v:0);
+  });
+
+  rec.n++;
 }
 
 /* =========================
-   Snapshot
+   Phase segmentation
+   - still uses event markers:
+     peak projectile speed & peak driver ω
+   - but summaries are simple avg+peak per metric per phase
 ========================= */
-function snapshotPNG(){
-  if(!video || video.paused) return showStatus("Start Camera/Upload first.", "error");
-  const c=document.createElement('canvas');
-  const w=overlay.width, h=overlay.height;
-  c.width=w; c.height=h;
-  const g=c.getContext('2d');
-  try{ g.drawImage(video,0,0,w,h); }catch(_){}
-  try{ g.drawImage(overlay,0,0,w,h); }catch(_){}
+function segmentPhases(){
+  const n=rec.n;
+  if(n<10) return [{name:"Full", i0:0, i1:n-1}];
 
-  const a=document.createElement('a');
-  a.href=c.toDataURL("image/png");
-  a.download=`snapshot_${Date.now()}.png`;
-  a.click();
-}
+  const peakProjIdx = argMax(rec.proj_speed);
+  const peakWIdx = argMaxAbs(rec.driver_angVel);
 
-/* =========================
-   Phases (skill-aware event segmentation)
-   Events:
-   - peak projectile speed
-   - peak driver ω
-   - inferred "release/contact": when effector distance increases sharply while projectile valid
-========================= */
-function segmentPhases(rec){
-  const n=rec.t.length;
-  if(n<12) return { events:{}, list:[{name:"Full",i0:0,i1:n-1}] };
+  // simple phase boundaries around events (relative windows)
+  const w1 = Math.max(3, Math.floor(n*0.12));
+  const w2 = Math.max(3, Math.floor(n*0.10));
 
-  const peakProjIdx = argMaxAbsWhere(rec.projSpeed_mps, rec.projValid);
-  const peakProjSpeed = peakProjIdx>=0?Math.abs(rec.projSpeed_mps[peakProjIdx]):0;
+  const accel0 = clampInt(Math.min(peakWIdx, peakProjIdx) - w1, 0, n-1);
+  const accel1 = clampInt(Math.min(peakWIdx, peakProjIdx) + w1, 0, n-1);
 
-  const peakAngVelIdx = argMaxAbs(rec.driverAngVel_rads);
-  const peakAngVel = Math.abs(rec.driverAngVel_rads[peakAngVelIdx]||0);
+  const release0 = clampInt(peakProjIdx - w2, 0, n-1);
+  const release1 = clampInt(peakProjIdx + w2, 0, n-1);
 
-  // release/contact: big rise in effector distance
-  let releaseIdx = -1;
-  for(let i=2;i<n;i++){
-    if((rec.projValid[i]||0)!==1) continue;
-    const d0=rec.effectorDist_m[i-1]||0;
-    const d1=rec.effectorDist_m[i]||0;
-    if(d1-d0 > 0.06){ // 6 cm jump = separation event
-      releaseIdx = i;
-      break;
-    }
-  }
-  if(releaseIdx<0) releaseIdx = (peakProjIdx>=0?peakProjIdx:peakAngVelIdx);
-
-  const wRel=Math.max(3, Math.floor(n*0.08));
-  const wAng=Math.max(3, Math.floor(n*0.10));
-
-  const prepEnd = clampInt(Math.min(releaseIdx, peakAngVelIdx)-2, 0, n-1);
-
-  const phases = [
-    { name:"Preparation", i0:0, i1:prepEnd },
-    { name:"Acceleration", i0:clampInt(peakAngVelIdx-wAng,0,n-1), i1:clampInt(peakAngVelIdx+wAng,0,n-1) },
-    { name:"Release/Contact", i0:clampInt(releaseIdx-wRel,0,n-1), i1:clampInt(releaseIdx+wRel,0,n-1) },
-    { name:"Follow-through", i0:clampInt(releaseIdx+wRel,0,n-1), i1:n-1 }
+  return [
+    {name:"Preparation", i0:0, i1:Math.max(0, accel0-1)},
+    {name:"Acceleration", i0:accel0, i1:accel1},
+    {name:"Release/Contact", i0:release0, i1:release1},
+    {name:"Follow-through", i0:Math.min(n-1, release1+1), i1:n-1},
   ];
-
-  return {
-    events:{ peakProjIdx, peakProjSpeed, peakAngVelIdx, peakAngVel, releaseIdx },
-    list: phases
-  };
+}
+function clampInt(x,a,b){ return Math.max(a, Math.min(b, Math.round(x))); }
+function argMax(arr){
+  let best=0, bestV=-1;
+  for(let i=0;i<(arr||[]).length;i++){
+    const v=+arr[i]||0;
+    if(v>bestV){ bestV=v; best=i; }
+  }
+  return best;
+}
+function argMaxAbs(arr){
+  let best=0, bestV=-1;
+  for(let i=0;i<(arr||[]).length;i++){
+    const v=Math.abs(+arr[i]||0);
+    if(v>bestV){ bestV=v; best=i; }
+  }
+  return best;
 }
 
 /* =========================
-   XLSX Export (adds projectile summary)
+   XLSX export:
+   - simple per-phase avg+peak for each selected metric
+   - angles exported in radians
 ========================= */
 function downloadData(){
-  if(!rec.t.length) return showStatus("No recorded data. Press Start Recording first.", "error");
+  if(!rec.n) return showStatus("No recorded data.", "error");
 
-  const profile=currentParticipant || participants[0] || {name:"",sex:"",age:"",mass:"",height:""};
-  const driver = `${document.getElementById('kinJoint').value}_${document.getElementById('kinSide').value}`;
-  const phasesObj = segmentPhases(rec);
+  const phases=segmentPhases();
 
-  // Skill (overall): majority vote
-  const skillOverall = mode(rec.inferredSkill);
-
-  // 1) Profile
-  const profileRows = [
-    { field:"name", value: profile.name },
-    { field:"sex", value: profile.sex },
-    { field:"age", value: profile.age },
-    { field:"mass_kg", value: profile.mass },
-    { field:"height_cm", value: profile.height },
-    { field:"driver_joint", value: driver },
-    { field:"skill_inferred_overall", value: skillOverall },
-    { field:"source", value: sessionMeta.source || "" },
-    { field:"camera_facing", value: sessionMeta.facing || "" },
-    { field:"fps_requested", value: sessionMeta.fpsRequested || "" },
-    { field:"fps_detected_est", value: detectedFPS || "" },
-    { field:"started_at", value: sessionMeta.startedAt || "" },
-    { field:"notes", value:"ω in [rad/s]. Angles/ROM exported as [rad]. Projectile motion exported. Kinetics are simplified proxies (trend)."}
+  // profile
+  const p=currentParticipant||{};
+  const profileRows=[
+    {field:"name", value:p.name||""},
+    {field:"sex", value:p.sex||""},
+    {field:"age", value:p.age||""},
+    {field:"mass_kg", value:p.mass||""},
+    {field:"height_cm", value:p.height||""},
+    {field:"plane", value:rec.plane},
+    {field:"driver", value:rec.driver},
+    {field:"fps_used", value:rec.fpsUsed},
+    {field:"samples", value:rec.n},
+    {field:"note", value:"ω [rad/s]. Angles exported in [rad]. For wrist/ankle, ω derived from segment orientation."}
   ];
 
-  // 2) Kinematics summary (driver + selected metrics)
-  const kinSummaryRows = [];
-  kinSummaryRows.push(driverSummary("Overall", driver, {i0:0,i1:rec.t.length-1}, phasesObj, skillOverall));
-  phasesObj.list.forEach(ph => kinSummaryRows.push(driverSummary(ph.name, driver, ph, phasesObj, skillOverall)));
-
-  if(rec.metricsDefs && rec.metricsDefs.length){
-    kinSummaryRows.push({ phase:"—", driver_joint:"—", metric_name:"Selected metrics (phase summaries below)", metric_unit:"", metric_peak:"", metric_avg:"", metric_ROM_if_angle_rad:"" });
-    rec.metricsDefs.forEach(def=>{
-      kinSummaryRows.push(metricSummary(def, "Overall", {i0:0,i1:rec.t.length-1}));
-      phasesObj.list.forEach(ph=>kinSummaryRows.push(metricSummary(def, ph.name, ph)));
+  // summary rows
+  const rows=[];
+  phases.forEach(ph=>{
+    // driver summary
+    rows.push({
+      phase: ph.name,
+      metric: "driver_linVel [m/s]",
+      avg: round(mean(slice(rec.driver_linVel, ph)), 6),
+      peak: round(maxAbs(slice(rec.driver_linVel, ph)), 6)
     });
-  }
+    rows.push({
+      phase: ph.name,
+      metric: "driver_angVel [rad/s]",
+      avg: round(mean(slice(rec.driver_angVel, ph)), 6),
+      peak: round(maxAbs(slice(rec.driver_angVel, ph)), 6)
+    });
+    rows.push({
+      phase: ph.name,
+      metric: "driver_angle [rad]",
+      avg: round(mean(slice(rec.driver_angle, ph)), 6),
+      peak: round(maxAbs(slice(rec.driver_angle, ph)), 6)
+    });
+    rows.push({
+      phase: ph.name,
+      metric: "driver_disp [m]",
+      avg: round(mean(slice(rec.driver_disp, ph)), 6),
+      peak: round(maxAbs(slice(rec.driver_disp, ph)), 6)
+    });
+    rows.push({
+      phase: ph.name,
+      metric: "projectile_speed [m/s]",
+      avg: round(mean(slice(rec.proj_speed, ph)), 6),
+      peak: round(maxAbs(slice(rec.proj_speed, ph)), 6)
+    });
 
-  // 2b) Kinematics time-series (includes projectile kinematics)
-  const kinTSRows=[];
-  for(let i=0;i<rec.t.length;i++){
-    const row={
-      "time_s": round(rec.t[i],4),
-      "driver_linVel[m/s]": round(rec.driverLinVel_mps[i]||0,6),
-      "driver_angVel[rad/s]": round(rec.driverAngVel_rads[i]||0,6),
-      "driver_angle[rad]": round(rec.driverAngle_rad[i]||0,6),
-      "driver_disp[m]": round(rec.driverDisp_m[i]||0,6),
+    // selected metrics
+    rec.metricsDefs.forEach(def=>{
+      const raw = slice(rec.metrics[def.id], ph);
+      let arr = raw;
+      let unit = unitsFor(def);
 
-      "projectile_valid[0/1]": rec.projValid[i]||0,
-      "proj_x[m]": round(rec.projX_m[i]||0,6),
-      "proj_y[m]": round(rec.projY_m[i]||0,6),
-      "proj_vx[m/s]": round(rec.projVx_mps[i]||0,6),
-      "proj_vy[m/s]": round(rec.projVy_mps[i]||0,6),
-      "proj_speed[m/s]": round(rec.projSpeed_mps[i]||0,6),
-      "proj_ax[m/s^2]": round(rec.projAx_mps2[i]||0,6),
-      "proj_ay[m/s^2]": round(rec.projAy_mps2[i]||0,6),
-      "proj_accel[m/s^2]": round(rec.projAccel_mps2[i]||0,6),
-      "proj_angle[deg]": round(rec.projAngle_deg[i]||0,3),
+      // convert angles deg -> rad for export
+      if(def.type==="angle"){
+        arr = raw.map(x => (x||0) * Math.PI/180);
+        unit = "[rad]";
+      }
+      rows.push({
+        phase: ph.name,
+        metric: `${def.type}_${def.joint}_${def.side} ${unit}`,
+        avg: round(mean(arr), 6),
+        peak: round(maxAbs(arr), 6)
+      });
+    });
+  });
 
-      "effector": rec.effectorName[i]||"—",
-      "effector_dist[m]": round(rec.effectorDist_m[i]||0,6),
-      "skill_guess": rec.inferredSkill[i]||"Unknown"
+  // time-series (discrete)
+  const ts=[];
+  for(let i=0;i<rec.n;i++){
+    const r={
+      sample: i,
+      time_s: round(rec.t[i], 6),
+      "Force[N]": round(rec.forceN[i]||0, 6),
+      "Moment[Nm]": round(rec.momentNm[i]||0, 8),
+      "driver_linVel[m/s]": round(rec.driver_linVel[i]||0, 6),
+      "driver_angVel[rad/s]": round(rec.driver_angVel[i]||0, 6),
+      "driver_angle[rad]": round(rec.driver_angle[i]||0, 6),
+      "driver_disp[m]": round(rec.driver_disp[i]||0, 6),
+      "proj_speed[m/s]": round(rec.proj_speed[i]||0, 6),
     };
 
-    if(rec.metricsDefs && rec.metrics){
-      rec.metricsDefs.forEach(def=>{
-        const val = (rec.metrics[def.id] && rec.metrics[def.id][i]!=null) ? rec.metrics[def.id][i] : 0;
-        if(def.type==="angle") row[`${def.id}[rad]`] = round((val*Math.PI/180),6);
-        else if(def.type==="angVel") row[`${def.id}[rad/s]`] = round(val,6);
-        else row[`${def.id}[m/s]`] = round(val,6);
-      });
-    }
+    // selected metrics full series
+    rec.metricsDefs.forEach(def=>{
+      const val = (rec.metrics[def.id] && rec.metrics[def.id][i]!=null) ? rec.metrics[def.id][i] : 0;
+      if(def.type==="angle") r[`${def.id}[rad]`] = round((val*Math.PI/180), 6);
+      else if(def.type==="angVel") r[`${def.id}[rad/s]`] = round(val, 6);
+      else r[`${def.id}[m/s]`] = round(val, 6);
+    });
 
-    kinTSRows.push(row);
+    ts.push(r);
   }
-
-  // 2c) Projectile summary by phase
-  const projSummaryRows=[];
-  projSummaryRows.push(projectileSummary("Overall", {i0:0,i1:rec.t.length-1}));
-  phasesObj.list.forEach(ph=>projSummaryRows.push(projectileSummary(ph.name, ph)));
-
-  // 3) Kinetics time-series
-  const kineticsRows = rec.t.map((t,i)=>({
-    "time_s": round(t,4),
-    "Force_filt[N]": round(rec.forceFilt_N[i]||0,6),
-    "Moment_filt[Nm]": round(rec.momentFilt_Nm[i]||0,8)
-  }));
-
-  // 4) Technical model / recommendations (skill-aware)
-  const modelRows = buildTechnicalModel(skillOverall, driver, phasesObj);
 
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(profileRows), "1_Profile");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kinSummaryRows), "2_Kinematics_Summary");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kinTSRows), "2b_Kinematics_TimeSeries");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(projSummaryRows), "2c_Projectile_Summary");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kineticsRows), "3_Kinetics_ForceMoment_Time");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(modelRows), "4_Technical_Model");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "2_Phase_Summary");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ts), "3_TimeSeries");
 
-  const fname=`sport_analysis_${(profile.name||"participant").replace(/\s+/g,"_")}_${Date.now()}.xlsx`;
-  XLSX.writeFile(wb, fname);
-  showStatus("XLSX exported (skill-aware phases + projectile kinematics).", "success");
+  XLSX.writeFile(wb, `analysis_${(p.name||"participant").replace(/\s+/g,"_")}_${Date.now()}.xlsx`);
+  showStatus("Exported XLSX (phase avg+peak + discrete time-series).", "success");
 }
 
-/* =========================
-   Summary helpers
-========================= */
-function driverSummary(label, driver, ph, phasesObj, skillOverall){
-  const i0=ph.i0, i1=ph.i1;
-  const tt=rec.t.slice(i0,i1+1);
-  const dur=tt.length?(tt[tt.length-1]-tt[0]):0;
-
-  const v = rec.driverLinVel_mps.slice(i0,i1+1);
-  const w = rec.driverAngVel_rads.slice(i0,i1+1);
-  const ang = rec.driverAngle_rad.slice(i0,i1+1);
-  const disp = rec.driverDisp_m.slice(i0,i1+1);
-
-  const rom = ang.length?(Math.max(...ang)-Math.min(...ang)):0;
-  const dispNet = disp.length?(disp[disp.length-1]-disp[0]):0;
-
-  const projSpeed = rec.projSpeed_mps.slice(i0,i1+1);
-  const projOk = rec.projValid.slice(i0,i1+1);
-  let peakProj=0;
-  for(let i=0;i<projSpeed.length;i++){
-    if((projOk[i]||0)===1) peakProj=Math.max(peakProj, Math.abs(projSpeed[i]||0));
-  }
-
-  const ev = phasesObj.events||{};
-  const note = (label==="Overall")
-    ? `Skill inferred: ${skillOverall}. Events: peakProjSpeed=${round(ev.peakProjSpeed,3)}m/s@${ev.peakProjIdx}, peakω=${round(ev.peakAngVel,3)}rad/s@${ev.peakAngVelIdx}, release/contact@${ev.releaseIdx}`
-    : "";
-
-  return {
-    phase: label,
-    driver_joint: driver,
-    duration_s: round(dur,3),
-    "peak_linVel[m/s]": round(maxAbs(v),6),
-    "avg_linVel[m/s]": round(mean(v),6),
-    "peak_angVel[rad/s]": round(maxAbs(w),6),
-    "avg_angVel[rad/s]": round(mean(w),6),
-    "ROM_angDisp[rad]": round(rom,6),
-    "avg_angle[rad]": round(mean(ang),6),
-    "displacement[m]": round(dispNet,6),
-    "peak_projectile_speed[m/s]": round(peakProj,6),
-    notes: note
-  };
+function slice(arr, ph){
+  if(!arr||!arr.length) return [];
+  return arr.slice(ph.i0, ph.i1+1);
 }
-
-function metricSummary(def, label, ph){
-  const i0=ph.i0, i1=ph.i1;
-  const arr = rec.metrics[def.id] ? rec.metrics[def.id].slice(i0,i1+1) : [];
-  const tt  = rec.t.slice(i0,i1+1);
-  const dur = tt.length?(tt[tt.length-1]-tt[0]):0;
-
-  let series = arr;
-  let unit = def.type==="linVel"?"m/s":(def.type==="angVel"?"rad/s":"rad");
-  if(def.type==="angle"){
-    series = arr.map(x => (x||0) * Math.PI/180);
-  }
-
-  const peak=maxAbs(series);
-  const avg=mean(series);
-  const rom = (def.type==="angle" && series.length) ? (Math.max(...series)-Math.min(...series)) : "";
-
-  return {
-    phase: label,
-    driver_joint: "selected_metric",
-    duration_s: round(dur,3),
-    metric_name: `${def.type}_${def.joint}_${def.side}`,
-    metric_unit: `[${unit}]`,
-    metric_peak: round(peak,6),
-    metric_avg: round(avg,6),
-    metric_ROM_if_angle_rad: (def.type==="angle") ? round(rom,6) : ""
-  };
-}
-
-function projectileSummary(label, ph){
-  const i0=ph.i0, i1=ph.i1;
-  const ok = rec.projValid.slice(i0,i1+1);
-  const sp = rec.projSpeed_mps.slice(i0,i1+1);
-  const ang = rec.projAngle_deg.slice(i0,i1+1);
-  const acc = rec.projAccel_mps2.slice(i0,i1+1);
-
-  let spVals=[], angVals=[], accVals=[];
-  for(let i=0;i<ok.length;i++){
-    if((ok[i]||0)===1){
-      spVals.push(Math.abs(sp[i]||0));
-      angVals.push(ang[i]||0);
-      accVals.push(Math.abs(acc[i]||0));
-    }
-  }
-
-  return {
-    phase: label,
-    projectile_samples: spVals.length,
-    "peak_speed[m/s]": round(maxAbs(spVals),6),
-    "avg_speed[m/s]": round(mean(spVals),6),
-    "avg_launch_angle[deg]": round(mean(angVals),3),
-    "peak_accel[m/s^2]": round(maxAbs(accVals),6),
-    "avg_accel[m/s^2]": round(mean(accVals),6)
-  };
-}
-
-/* =========================
-   Technical model (skill-aware)
-========================= */
-function buildTechnicalModel(skillOverall, driver, phasesObj){
-  const ev=phasesObj.events||{};
-  const peakV = maxAbs(rec.driverLinVel_mps);
-  const peakW = maxAbs(rec.driverAngVel_rads);
-  const rom = rec.driverAngle_rad.length?(Math.max(...rec.driverAngle_rad)-Math.min(...rec.driverAngle_rad)):0;
-  const dispNet = rec.driverDisp_m.length?(rec.driverDisp_m[rec.driverDisp_m.length-1]-rec.driverDisp_m[0]):0;
-  const peakF = maxAbs(rec.forceFilt_N);
-  const peakM = maxAbs(rec.momentFilt_Nm);
-
-  const peakProj = (ev.peakProjSpeed!=null)?ev.peakProjSpeed:maxAbsWhere(rec.projSpeed_mps, rec.projValid);
-  const avgProjAng = mean(rec.projAngle_deg.filter((_,i)=>rec.projValid[i]===1));
-
-  const rows=[];
-  rows.push({ section:"Skill inference", item:"Skill (CV heuristic)", value: skillOverall });
-  rows.push({ section:"Event markers", item:"Peak projectile speed [m/s]", value: round(peakProj,6) });
-  rows.push({ section:"Event markers", item:"Peak driver ω [rad/s]", value: round(ev.peakAngVel||peakW,6) });
-  rows.push({ section:"Event markers", item:"Release/contact index", value: ev.releaseIdx ?? "" });
-  rows.push({ section:"Projectile", item:"Average launch angle [deg]", value: round(avgProjAng||0,3) });
-
-  rows.push({ section:"Kinematics", item:"Driver joint", value: driver });
-  rows.push({ section:"Kinematics", item:"Peak v [m/s]", value: round(peakV,6) });
-  rows.push({ section:"Kinematics", item:"Peak ω [rad/s]", value: round(peakW,6) });
-  rows.push({ section:"Kinematics", item:"ROM [rad]", value: round(rom,6) });
-  rows.push({ section:"Kinematics", item:"Displacement [m]", value: round(dispNet,6) });
-
-  rows.push({ section:"Kinetics", item:"Peak Force (filtered) [N]", value: round(peakF,3) });
-  rows.push({ section:"Kinetics", item:"Peak Moment (filtered) [Nm]", value: round(peakM,6) });
-
-  const recos = buildRecommendations(skillOverall, {peakV, peakW, rom, dispNet, peakF, peakM, peakProj, avgProjAng, ev});
-  recos.forEach((t,i)=>rows.push({ section:"Recommendations", item:`R${i+1}`, value:t }));
-
-  rows.push({ section:"Notes", item:"Method", value:"Skill inference uses projectile + closest effector (ankle/wrist) + ω magnitude. Use as guidance, not diagnosis." });
-  return rows;
-}
-
-function buildRecommendations(skill, x){
-  const out=[];
-  const {peakW, peakProj, avgProjAng, peakM, peakF} = x;
-
-  if(skill.includes("Kick")){
-    out.push("Kick: prioritize proximal-to-distal sequencing (hip → knee → ankle). If peak ω is low, work on swing speed + stiffness at contact.");
-    out.push("Projectile: if launch angle is inconsistent, adjust foot contact point and approach angle; aim repeatable launch angle for your target (low drive vs loft).");
-    out.push("Training: banded hip flexor swings, A-skips → fast leg cycles, resisted instep strikes, and decel (hamstring eccentrics) to control follow-through.");
-  } else if(skill.includes("Overhand throw") || skill.includes("pitch")){
-    out.push("Throw: aim for earlier trunk rotation and a clean hand-path; peak ω should typically occur just before peak projectile speed (release).");
-    out.push("If Moment spikes (high Nm), add eccentric decel + scapular stability work; keep shoulder/elbow loads controlled.");
-    out.push("Training: med-ball rotational throws, step-behind throws, cuff/scap circuits, decel drills (catch-and-stick), progressive intent throwing.");
-  } else if(skill.includes("Two-hand")){
-    out.push("Two-hand release: improve timing of knee/hip extension with arm extension; avoid late arm-only push.");
-    out.push("Projectile: if angle too high/low, cue 'finish to target' and adjust release height; monitor peak speed vs consistency.");
-    out.push("Training: jump-to-reach sequencing drills, tempo reps (70–85%), then intent reps; core anti-extension/anti-rotation for stability.");
-  } else if(skill.includes("Strike") || skill.includes("swing")){
-    out.push("Strike/swing: build rotational speed but keep contact timing consistent—peak hand speed should align close to contact/release.");
-    out.push("Projectile: if speed is high but angle is off, adjust bat/racket path and contact point; focus on repeatable launch angle windows.");
-    out.push("Training: rotational med-ball slams, cable rotations, overloaded/underloaded swings, and braking strength (obliques/hips) to reduce late collapse.");
-  } else {
-    out.push("Unknown skill: keep the approach event-based—use peak projectile speed and peak ω to check sequencing.");
-    out.push("If peak Force/Moment are noisy, increase lighting, stabilize camera, and ensure projectile is large in frame. Consider using higher FPS uploads.");
-  }
-
-  // Generic safety cues
-  if(peakM > 3) out.push("High Moment trend: add eccentric control + reduce late snap; progress volume gradually.");
-  if(peakF > 300) out.push("High Force trend: check technique and braking; consider softer contact strategy and strength for deceleration.");
-  if(peakProj > 0 && (avgProjAng > 80 || avgProjAng < -20)) out.push("Projectile angle extreme: likely tracking/plane issue—reposition camera perpendicular to motion plane and keep projectile visible.");
-
-  return out.slice(0,8);
-}
-
-/* =========================
-   Charts
-========================= */
-function pushChart(key, t, v){
-  const win=parseInt(document.getElementById('windowSeconds').value);
-  chartSeries[key].push({t, v});
-  while(chartSeries[key].length && chartSeries[key][0].t < t-win) chartSeries[key].shift();
-}
-function throttleChartDraw(t){
-  if(t-lastChartDraw < 0.1) return;
-  lastChartDraw = t;
-  drawDualAxisChart('chartDual');
-}
-function drawDualAxisChart(id){
-  const c=document.getElementById(id);
-  const g=c.getContext('2d');
-  const w=c.width=c.clientWidth;
-  const h=c.height=c.clientHeight;
-  g.clearRect(0,0,w,h);
-
-  g.strokeStyle="#eee";
-  g.beginPath(); g.moveTo(0,h/2); g.lineTo(w,h/2); g.stroke();
-
-  const fData = chartSeries.force;
-  const mData = chartSeries.moment;
-  if(!fData.length || !mData.length) return;
-
-  const win=parseInt(document.getElementById('windowSeconds').value);
-  const now = Math.max(fData[fData.length-1].t, mData[mData.length-1].t);
-
-  let fMax=1, mMax=1;
-  fData.forEach(d=>{ fMax=Math.max(fMax, Math.abs(d.v)); });
-  mData.forEach(d=>{ mMax=Math.max(mMax, Math.abs(d.v)); });
-
-  g.strokeStyle="#667eea"; g.lineWidth=2; g.beginPath();
-  fData.forEach((pt,i)=>{
-    const x=((win-(now-pt.t))/win)*w;
-    const y=h-((pt.v/(fMax*1.2))*(h/2)+h/2);
-    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
-  });
-  g.stroke();
-
-  g.strokeStyle="#ef4444"; g.lineWidth=2; g.beginPath();
-  mData.forEach((pt,i)=>{
-    const x=((win-(now-pt.t))/win)*w;
-    const y=h-((pt.v/(mMax*1.2))*(h/2)+h/2);
-    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
-  });
-  g.stroke();
-
-  g.fillStyle="#666";
-  g.font="12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-  g.fillText("Force [N] (left)", 10, 14);
-  const txt="Moment [Nm] (right)";
-  const tw=g.measureText(txt).width;
-  g.fillText(txt, w - tw - 10, 14);
+function unitsFor(def){
+  if(def.type==="linVel") return "[m/s]";
+  if(def.type==="angVel") return "[rad/s]";
+  if(def.type==="angle") return "[deg]"; // exported as rad in XLSX
+  return "";
 }
 
 /* =========================
@@ -1724,16 +1585,27 @@ function renderMetricChips(){
   });
 }
 function metricHint(m){
-  if(m.type==="linVel") return "Linear velocity [m/s] from 2D displacement / dt.";
-  if(m.type==="angVel") return "Angular velocity [rad/s] from Δθ(rad)/dt.";
-  if(m.type==="angle") return "Angle shown in [deg] live; exported as [rad] in XLSX.";
+  if(m.type==="linVel") return "Linear velocity [m/s] from frame-to-frame displacement.";
+  if(m.type==="angVel") return "Angular velocity [rad/s] (joint angle or segment orientation).";
+  if(m.type==="angle") return "Displayed [deg] live; exported as [rad] in XLSX.";
   return "";
 }
-function metricUnits(type){
-  if(type==="linVel") return "m/s";
-  if(type==="angVel") return "rad/s";
-  if(type==="angle") return "deg";
-  return "";
+
+/* =========================
+   Snapshot
+========================= */
+function snapshotPNG(){
+  if(!video || video.paused) return showStatus("Start Camera/Upload first.", "error");
+  const c=document.createElement('canvas');
+  const w=overlay.width, h=overlay.height;
+  c.width=w; c.height=h;
+  const g=c.getContext('2d');
+  try{ g.drawImage(video,0,0,w,h); }catch(_){}
+  try{ g.drawImage(overlay,0,0,w,h); }catch(_){}
+  const a=document.createElement('a');
+  a.href=c.toDataURL("image/png");
+  a.download=`snapshot_${Date.now()}.png`;
+  a.click();
 }
 
 /* =========================
@@ -1755,50 +1627,6 @@ function showStatus(msg,type){
 }
 function setStatusText(t){ document.getElementById('statusText').innerText=t; }
 function setSourceText(t){ document.getElementById('sourceText').innerText=t; }
-
-/* =========================
-   Utils
-========================= */
-function clamp(x,a,b){ return Math.max(a, Math.min(b,x)); }
-function clampInt(x,a,b){ return Math.max(a, Math.min(b, Math.round(x))); }
-function round(x,dp){ if(!isFinite(x)) return 0; const p=Math.pow(10,dp); return Math.round(x*p)/p; }
-function mean(arr){ if(!arr || !arr.length) return 0; return arr.reduce((s,x)=>s+(+x||0),0)/arr.length; }
-function maxAbs(arr){ if(!arr || !arr.length) return 0; let m=0; arr.forEach(x=>{ const a=Math.abs(+x||0); if(a>m) m=a; }); return m; }
-function argMaxAbs(arr){
-  let best=0, bestV=-1;
-  for(let i=0;i<(arr||[]).length;i++){
-    const a=Math.abs(+arr[i]||0);
-    if(a>bestV){ bestV=a; best=i; }
-  }
-  return best;
-}
-function argMaxAbsWhere(arr, mask){
-  let best=-1, bestV=-1;
-  for(let i=0;i<(arr||[]).length;i++){
-    if((mask[i]||0)!==1) continue;
-    const a=Math.abs(+arr[i]||0);
-    if(a>bestV){ bestV=a; best=i; }
-  }
-  return best;
-}
-function maxAbsWhere(arr, mask){
-  let m=0;
-  for(let i=0;i<(arr||[]).length;i++){
-    if((mask[i]||0)!==1) continue;
-    m=Math.max(m, Math.abs(arr[i]||0));
-  }
-  return m;
-}
-function mode(arr){
-  const f=new Map();
-  (arr||[]).forEach(x=>{
-    const k=(x||"").toString();
-    f.set(k,(f.get(k)||0)+1);
-  });
-  let best=""; let bestC=-1;
-  f.forEach((c,k)=>{ if(c>bestC){ bestC=c; best=k; } });
-  return best || "Unknown";
-}
 </script>
 </body>
 </html>
