@@ -7,14 +7,9 @@
   <meta name="copyright" content="© 2025 Ng Jun Wei. All rights reserved.">
   <title>Sport Performance Analyzer (iOS) + Joint-Driven Kinetics</title>
 
-  <!-- TFJS + Pose -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0"></script>
-
-  <!-- Projectile (COCO-SSD) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
-
-  <!-- XLSX -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <style>
@@ -96,25 +91,14 @@
     @media (max-width: 980px){ .sticky{ top: 0; z-index: 50; position: static; } }
 
     .video-wrap{ position:relative; background:#000; border-radius: 14px; overflow:hidden; min-height: 200px; }
-    video{
-      width:100%;
-      height:auto;
-      display:block;
-      position:relative;
-      z-index:1;
-    }
+    video{ width:100%; height:auto; display:block; position:relative; z-index:1; }
     canvas#overlay{
-      width:100%;
-      height:100%;
-      display:block;
-      position:absolute;
-      left:0; top:0;
-      z-index:5;
-      pointer-events:none;
+      width:100%; height:100%; display:block;
+      position:absolute; left:0; top:0;
+      z-index:5; pointer-events:none;
     }
     .hud{
-      position:absolute;
-      top: 10px; right: 10px;
+      position:absolute; top: 10px; right: 10px;
       z-index: 10;
       background: rgba(0,0,0,0.72);
       color:#fff;
@@ -129,7 +113,6 @@
       max-width: 95%;
       white-space: pre-line;
     }
-    .hud small{ font-weight: 850; opacity: .92; }
     .divider{ height:1px; background:#e9e9e9; margin: 12px 0; }
     .mini{ color:#666; font-size: .88em; line-height: 1.35; margin-top: 8px; }
 
@@ -190,7 +173,7 @@
     .chart-title span{ color:#666; font-weight: 850; font-size: .9em; }
     canvas.chart{
       width: 100%;
-      height: 150px;
+      height: 170px;
       display:block;
       border-radius: 12px;
       background: #fafafa;
@@ -259,7 +242,7 @@
 <body>
 <div class="container">
   <h1>🏃‍♂️ Movement Kinetics Lab</h1>
-  <p class="subtitle">Event-based phases (peak projectile speed + peak angular velocity) • low-pass Force–Time & Moment–Time • simplified XLSX</p>
+  <p class="subtitle">Skill inference via CV heuristics • projectile kinematics exported • ω in [rad/s], angles exported in [rad]</p>
 
   <div id="statusMessage" class="status-message"></div>
 
@@ -271,9 +254,7 @@
           <div><label>Name *</label><input id="participantName" placeholder="Enter name"></div>
           <div>
             <label>Sex *</label>
-            <select id="participantSex">
-              <option value="male">Male</option><option value="female">Female</option>
-            </select>
+            <select id="participantSex"><option value="male">Male</option><option value="female">Female</option></select>
           </div>
           <div><label>Age *</label><input id="participantAge" type="number" value="25"></div>
           <div><label>Mass (kg) *</label><input id="participantMass" type="number" value="70"></div>
@@ -298,33 +279,36 @@
             </select>
           </div>
           <div>
-             <label>FPS (Requested)</label>
-             <select id="fpsSelection">
-               <option value="30">30</option>
-               <option value="60" selected>60</option>
-               <option value="120">120 (best effort)</option>
-               <option value="240">240 (best effort)</option>
-             </select>
+            <label>FPS (Requested)</label>
+            <select id="fpsSelection">
+              <option value="30">30</option>
+              <option value="60" selected>60</option>
+              <option value="120">120 (best effort)</option>
+              <option value="240">240 (best effort)</option>
+            </select>
           </div>
           <div>
-             <label>Camera</label>
-             <select id="cameraFacing"><option value="environment">Back</option><option value="user">Front</option></select>
+            <label>Camera</label>
+            <select id="cameraFacing"><option value="environment">Back</option><option value="user">Front</option></select>
           </div>
           <div>
             <label>Window (s)</label>
             <select id="windowSeconds"><option value="5">5s</option><option value="10" selected>10s</option></select>
           </div>
           <div>
-             <label>Low-pass cutoff (Hz)</label>
-             <select id="cutoffHz"><option value="3">3</option><option value="4">4</option><option value="6" selected>6</option><option value="10">10</option><option value="12">12</option></select>
+            <label>Low-pass cutoff (Hz)</label>
+            <select id="cutoffHz">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="6" selected>6</option>
+              <option value="10">10</option>
+            </select>
           </div>
         </div>
 
         <div class="form-grid" style="margin-top:10px;">
-          <div>
-            <label>Video File (Upload)</label>
-            <input id="videoUpload" type="file" accept="video/*">
-          </div>
+          <div><label>Video File (Upload)</label><input id="videoUpload" type="file" accept="video/*"></div>
         </div>
 
         <button class="btn btn-primary" onclick="startInput()">Start (Camera / Upload)</button>
@@ -339,10 +323,7 @@
         <div class="form-grid">
           <div>
             <label>Mode</label>
-            <select id="projMode">
-              <option value="off" selected>Off</option>
-              <option value="coco">COCO-SSD Detect</option>
-            </select>
+            <select id="projMode"><option value="off" selected>Off</option><option value="coco">COCO-SSD Detect</option></select>
           </div>
           <div>
             <label>Class</label>
@@ -384,7 +365,8 @@
             <select id="kinJoint">
               <option value="hip">Hip</option><option value="knee">Knee</option>
               <option value="shoulder">Shoulder</option><option value="elbow">Elbow</option>
-              <option value="ankle">Ankle</option><option value="wrist">Wrist</option>
+              <option value="ankle">Ankle</option>
+              <option value="wrist">Wrist</option>
             </select>
           </div>
           <div>
@@ -392,9 +374,7 @@
             <select id="kinSide"><option value="R">Right</option><option value="L">Left</option></select>
           </div>
         </div>
-        <p class="mini">
-          Kinetics are simplified proxies (use trends). Phases are event-based using peak projectile speed and peak angular velocity.
-        </p>
+        <p class="mini">ω computed as Δθ(rad)/Δt → [rad/s]. Angles exported in [rad]. Projectile kinematics exported in [m], [m/s], [m/s²].</p>
       </div>
 
       <div class="card collapsible-card" id="displaySelectorCard" style="margin-top:12px;">
@@ -409,9 +389,9 @@
             <div>
               <label>Metric</label>
               <select id="metricType">
-                <option value="angle">Angle (°)</option>
-                <option value="angVel">Ang. Vel (°/s)</option>
-                <option value="linVel">Lin. Vel (m/s)</option>
+                <option value="angle">Angle [deg]</option>
+                <option value="angVel">Ang. Vel [rad/s]</option>
+                <option value="linVel">Lin. Vel [m/s]</option>
               </select>
             </div>
             <div>
@@ -438,28 +418,27 @@
 
           <div class="divider"></div>
           <div class="metric">
-            <div class="t">Quick interpretation (live)</div>
+            <div class="t">Live CV interpretation</div>
             <div class="s" id="liveInterpretation">—</div>
           </div>
         </div>
       </div>
 
       <div class="card" style="margin-top:12px;">
-        <h3>Real-time Charts</h3>
+        <h3>Real-time Kinetics (Dual axis)</h3>
         <div class="charts-grid">
           <div class="chart-card">
-            <div class="chart-title"><b>Force–Time (filtered, N)</b><span id="lblForce">0 N</span></div>
-            <canvas id="chartForce" class="chart"></canvas>
-          </div>
-          <div class="chart-card">
-            <div class="chart-title"><b>Moment–Time (filtered, Nm)</b><span id="lblMoment">0 Nm</span></div>
-            <canvas id="chartMoment" class="chart"></canvas>
+            <div class="chart-title">
+              <b>Force–Time [N] + Moment–Time [Nm]</b>
+              <span id="lblKinetics">F: 0 N | M: 0 Nm</span>
+            </div>
+            <canvas id="chartDual" class="chart"></canvas>
           </div>
         </div>
       </div>
 
       <div class="card" style="margin-top:12px;">
-        <button class="btn btn-primary" onclick="downloadData()">📊 Download XLSX (Profile • Kinematics Summary by Event-Phases • Kinetics Force/Moment Time • Technical Model)</button>
+        <button class="btn btn-primary" onclick="downloadData()">📊 Download XLSX (Profile • Kinematics • Projectile • Kinetics • Technical Model)</button>
       </div>
     </div>
 
@@ -476,8 +455,7 @@
           </div>
         </div>
         <p class="mini">
-          Warnings: 2D pose has depth ambiguity; fast motion blur reduces keypoint confidence; occlusion drops wrist/ankle.
-          Best: tripod + strong lighting + keep projectile large in frame.
+          CV skill inference is heuristic: best results with tripod, good lighting, and projectile clearly visible.
         </p>
       </div>
     </div>
@@ -487,80 +465,65 @@
 </div>
 
 <script>
-/* =========================================================
+/* =========================
    Globals
-========================================================= */
-let detector = null, cocoModel = null;
-let video = null, overlay = null, ctx = null;
-let streamRef = null;
-let animationId = null;
+========================= */
+let detector=null, cocoModel=null;
+let video=null, overlay=null, ctx=null;
+let streamRef=null, animationId=null;
 
-let participants = [];
-let currentParticipant = null;
+let participants=[], currentParticipant=null;
+let isRecording=false;
+let sessionMeta={};
 
-let isRecording = false;
+let prevFrameTS=0;
+let prevKeypoints=null;
+let frameIndex=0;
 
-let rec = {
-  t: [],
-  driverLinVel: [],
-  driverAngVel: [],
-  driverAngle: [],
-  driverDisp: [],
-  forceFilt: [],
-  momentFilt: [],
-  projSpeed: [],
-  projValid: []
-};
+let prevAngleDriverDeg=null;
+let prevAngleMapDeg=new Map();
 
-let sessionMeta = {};
-let prevFrameTS = 0;
-let prevKeypoints = null;
-let frameIndex = 0;
+let prevDriverPos=null;
+let cumDisp=0;
 
-let prevAngleDriver = null;
-let prevDriverPos = null;
-let cumDisp = 0;
+let prevProjState=null;     // for projectile vel/acc
+let lastProjectiles=[];
 
-let prevProj = null;
-let lastProjectiles = [];
+let detectedFPS=0, framesInSecond=0;
+let lastFPSUpdate=performance.now();
 
-let detectedFPS = 0;
-let framesInSecond = 0;
-let lastFPSUpdate = performance.now();
+let selectedMetrics=[];
 
-let selectedMetrics = [];
-let prevAngleMap = new Map();
+const FILTER_ORDER = 4;
+let forceStages = new Array(FILTER_ORDER).fill(0);
+let momentStages = new Array(FILTER_ORDER).fill(0);
 
-const chartSeries = { forceFilt:[], momentFilt:[] };
-let lastChartDraw = 0;
+const chartSeries = { force:[], moment:[] };
+let lastChartDraw=0;
 
 const KP = {
-  nose:0, left_eye:1, right_eye:2, left_ear:3, right_ear:4,
   shoulder_L:5, shoulder_R:6, elbow_L:7, elbow_R:8, wrist_L:9, wrist_R:10,
   hip_L:11, hip_R:12, knee_L:13, knee_R:14, ankle_L:15, ankle_R:16
 };
 
-const SEG_MASS = {
-  thigh: 0.10, shank: 0.0465, foot: 0.0145,
-  upperArm: 0.028, forearm: 0.016, hand: 0.006,
-  trunk: 0.50
-};
-
+const SEG_MASS = { thigh:0.10, shank:0.0465, foot:0.0145, upperArm:0.028, forearm:0.016, hand:0.006, trunk:0.50 };
 const SEG_K = { thigh:0.323, shank:0.302, foot:0.475, upperArm:0.322, forearm:0.303, hand:0.628 };
 
-/* =========================================================
-   Init
-========================================================= */
-window.onload = async () => {
-  video = document.getElementById('video');
-  overlay = document.getElementById('overlay');
-  ctx = overlay.getContext('2d');
+let rec = resetRec();
 
-  document.getElementById('participantName').value = "Athlete 1";
+/* =========================
+   Init
+========================= */
+window.onload = async () => {
+  video=document.getElementById('video');
+  overlay=document.getElementById('overlay');
+  ctx=overlay.getContext('2d');
+
+  document.getElementById('participantName').value="Athlete 1";
   addParticipant(true);
 
   showStatus("Loading Neural Networks...", "info");
-  try {
+  try{
     await tf.ready();
     try { await tf.setBackend('webgl'); await tf.ready(); } catch(_) {}
 
@@ -572,267 +535,276 @@ window.onload = async () => {
 
     showStatus("Models Ready. Start Camera or Upload.", "success");
     setStatusText("Models ready");
-  } catch(e) {
+  }catch(e){
     console.error(e);
     showStatus("Error loading models. Try reloading.", "error");
     setStatusText("Model load error");
   }
 };
 
-/* =========================================================
+/* =========================
    Participant
-========================================================= */
-function addParticipant(silent=false) {
-  const name = (document.getElementById('participantName').value || "").trim();
-  const sex = document.getElementById('participantSex').value;
-  const age = parseInt(document.getElementById('participantAge').value || "0");
-  const mass = parseFloat(document.getElementById('participantMass').value || "0");
-  const height = parseFloat(document.getElementById('participantHeight').value || "0");
+========================= */
+function addParticipant(silent=false){
+  const name=(document.getElementById('participantName').value||"").trim();
+  const sex=document.getElementById('participantSex').value;
+  const age=parseInt(document.getElementById('participantAge').value||"0");
+  const mass=parseFloat(document.getElementById('participantMass').value||"0");
+  const height=parseFloat(document.getElementById('participantHeight').value||"0");
+  if(!name||!mass||!height||!age){ if(!silent) showStatus("Fill Name, Age, Mass, Height.", "error"); return; }
 
-  if(!name || !mass || !height || !age) {
-    if(!silent) showStatus("Please fill Name, Age, Mass, Height.", "error");
-    return;
-  }
-
-  const existing = participants.find(p => p.name === name);
-  const profile = { name, sex, age, mass, height };
-
+  const existing=participants.find(p=>p.name===name);
+  const profile={name,sex,age,mass,height};
   if(existing) Object.assign(existing, profile);
   else participants.push(profile);
 
-  const sel = document.getElementById('selectedParticipant');
-  sel.innerHTML = "";
-  participants.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.name; opt.textContent = p.name;
+  const sel=document.getElementById('selectedParticipant');
+  sel.innerHTML="";
+  participants.forEach(p=>{
+    const opt=document.createElement('option');
+    opt.value=p.name; opt.textContent=p.name;
     sel.appendChild(opt);
   });
-  sel.value = name;
-
-  currentParticipant = profile;
-
+  sel.value=name;
+  currentParticipant=profile;
   if(!silent) showStatus(`Participant set: ${name}`, "success");
 }
-function onParticipantChange() {
-  const sel = document.getElementById('selectedParticipant');
-  const p = participants.find(x => x.name === sel.value);
-  if(p) currentParticipant = p;
+function onParticipantChange(){
+  const sel=document.getElementById('selectedParticipant');
+  const p=participants.find(x=>x.name===sel.value);
+  if(p) currentParticipant=p;
 }
 
-/* =========================================================
-   Input Source
-========================================================= */
-async function startInput() {
+/* =========================
+   Input
+========================= */
+async function startInput(){
   if(!detector) return showStatus("Wait for models to load.", "error");
   stopActive();
   resetSessionState();
 
-  const src = document.getElementById('inputSource').value;
-  const fpsReq = parseInt(document.getElementById('fpsSelection').value);
-  const facing = document.getElementById('cameraFacing').value;
+  const src=document.getElementById('inputSource').value;
+  const fpsReq=parseInt(document.getElementById('fpsSelection').value);
+  const facing=document.getElementById('cameraFacing').value;
 
-  sessionMeta = { source: src, fpsRequested: fpsReq, facing, startedAt: new Date().toISOString() };
+  sessionMeta={ source:src, fpsRequested:fpsReq, facing, startedAt:new Date().toISOString() };
 
-  if(src === "camera") await startCameraInternal(fpsReq, facing);
+  if(src==="camera") await startCameraInternal(fpsReq, facing);
   else await startUploadInternal();
 }
-
-async function startCameraInternal(fpsReq, facing) {
+async function startCameraInternal(fpsReq, facing){
   setStatusText("Starting camera...");
   setSourceText(`Source: Camera (${facing}, req ${fpsReq}fps)`);
 
-  const constraints = {
-    video: {
-      facingMode: facing,
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      frameRate: { ideal: fpsReq, max: fpsReq }
+  const constraints={
+    video:{
+      facingMode:facing,
+      width:{ideal:1280},
+      height:{ideal:720},
+      frameRate:{ideal:fpsReq, max:fpsReq}
     },
-    audio: false
+    audio:false
   };
 
-  try {
-    streamRef = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = streamRef;
-
-    video.onloadedmetadata = async () => {
+  try{
+    streamRef=await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject=streamRef;
+    video.onloadedmetadata=async()=>{
       await video.play();
+      overlay.width=video.videoWidth||1280;
+      overlay.height=video.videoHeight||720;
 
-      overlay.width = video.videoWidth || 1280;
-      overlay.height = video.videoHeight || 720;
-
-      if(facing === 'user') {
-        video.style.transform = "scaleX(-1)";
-        overlay.style.transform = "scaleX(-1)";
-      } else {
-        video.style.transform = "none";
-        overlay.style.transform = "none";
-      }
+      if(facing==='user'){ video.style.transform="scaleX(-1)"; overlay.style.transform="scaleX(-1)"; }
+      else { video.style.transform="none"; overlay.style.transform="none"; }
 
       enableRunButtons(true);
       setStatusText("Running");
-      animationId = requestAnimationFrame(renderLoop);
+      animationId=requestAnimationFrame(renderLoop);
       showStatus("Camera Active", "success");
     };
-  } catch(err) {
+  }catch(err){
     console.error(err);
-    showStatus("Camera Error: " + err.message, "error");
+    showStatus("Camera Error: "+err.message, "error");
     setStatusText("Camera error");
   }
 }
-
-async function startUploadInternal() {
-  const fileInput = document.getElementById('videoUpload');
+async function startUploadInternal(){
+  const fileInput=document.getElementById('videoUpload');
   if(!fileInput.files.length) return showStatus("Select a video file first.", "error");
-
-  const file = fileInput.files[0];
-  const url = URL.createObjectURL(file);
+  const file=fileInput.files[0];
+  const url=URL.createObjectURL(file);
 
   setStatusText("Loading video...");
   setSourceText(`Source: Upload (${file.name})`);
 
-  video.srcObject = null;
-  video.src = url;
-  video.loop = true;
-  video.muted = true;
-  video.playsInline = true;
+  video.srcObject=null;
+  video.src=url;
+  video.loop=true;
+  video.muted=true;
+  video.playsInline=true;
 
-  video.onloadedmetadata = async () => {
-    try {
+  video.onloadedmetadata=async()=>{
+    try{
       await video.play();
+      overlay.width=video.videoWidth||1280;
+      overlay.height=video.videoHeight||720;
 
-      overlay.width = video.videoWidth || 1280;
-      overlay.height = video.videoHeight || 720;
-
-      video.style.transform = "none";
-      overlay.style.transform = "none";
+      video.style.transform="none";
+      overlay.style.transform="none";
 
       enableRunButtons(true);
       setStatusText("Running");
-      animationId = requestAnimationFrame(renderLoop);
+      animationId=requestAnimationFrame(renderLoop);
       showStatus("Playing Upload", "success");
-    } catch(e) {
+    }catch(e){
       console.error(e);
-      showStatus("Upload playback error: " + e.message, "error");
+      showStatus("Upload playback error: "+e.message, "error");
       setStatusText("Upload error");
     }
   };
 }
-
-function stopInput() {
+function stopInput(){
   stopActive();
   enableRunButtons(false);
   showStatus("Stopped", "info");
   setStatusText("Stopped");
   setSourceText("Source: —");
 }
-
-function stopActive() {
+function stopActive(){
   if(animationId) cancelAnimationFrame(animationId);
-  animationId = null;
+  animationId=null;
 
-  if(streamRef) {
-    try { streamRef.getTracks().forEach(t => t.stop()); } catch(_) {}
-  }
-  streamRef = null;
+  if(streamRef){ try{ streamRef.getTracks().forEach(t=>t.stop()); }catch(_){} }
+  streamRef=null;
 
-  try { video.pause(); } catch(_) {}
-  video.srcObject = null;
+  try{ video.pause(); }catch(_){}
+  video.srcObject=null;
 
   if(ctx) ctx.clearRect(0,0,overlay.width,overlay.height);
 }
+function enableRunButtons(running){
+  document.getElementById('recordBtn').disabled=!running;
+  document.getElementById('snapBtn').disabled=!running;
+}
+function resetSessionState(){
+  isRecording=false;
+  rec=resetRec();
 
-function enableRunButtons(running) {
-  document.getElementById('recordBtn').disabled = !running;
-  document.getElementById('snapBtn').disabled = !running;
+  prevFrameTS=0;
+  prevKeypoints=null;
+  frameIndex=0;
+
+  prevAngleDriverDeg=null;
+  prevAngleMapDeg.clear();
+
+  prevDriverPos=null;
+  cumDisp=0;
+
+  prevProjState=null;
+  lastProjectiles=[];
+
+  chartSeries.force=[]; chartSeries.moment=[];
+  lastChartDraw=0;
+
+  forceStages=new Array(FILTER_ORDER).fill(0);
+  momentStages=new Array(FILTER_ORDER).fill(0);
+
+  document.getElementById('lblKinetics').innerText="F: 0 N | M: 0 Nm";
+  document.getElementById('liveInterpretation').innerText="—";
 }
 
-function resetSessionState() {
-  isRecording = false;
+/* =========================
+   Recording store (includes projectile kinematics)
+========================= */
+function resetRec(){
+  return {
+    t:[],
+    driverLinVel_mps:[],
+    driverAngVel_rads:[],
+    driverAngle_rad:[],
+    driverDisp_m:[],
+    forceFilt_N:[],
+    momentFilt_Nm:[],
 
-  rec = { t:[], driverLinVel:[], driverAngVel:[], driverAngle:[], driverDisp:[], forceFilt:[], momentFilt:[], projSpeed:[], projValid:[] };
+    // projectile kinematics
+    projValid:[],
+    projX_m:[], projY_m:[],
+    projVx_mps:[], projVy_mps:[],
+    projSpeed_mps:[],
+    projAx_mps2:[], projAy_mps2:[],
+    projAccel_mps2:[],
+    projAngle_deg:[],
 
-  prevFrameTS = 0;
-  prevKeypoints = null;
-  frameIndex = 0;
+    // skill inference helpers
+    effectorName:[],     // "wrist_R" / "ankle_L" etc
+    effectorDist_m:[],   // distance from projectile to effector
+    inferredSkill:[],    // per-frame guess (for debugging/export)
 
-  prevAngleDriver = null;
-  prevDriverPos = null;
-  cumDisp = 0;
-
-  prevAngleMap.clear();
-  prevProj = null;
-  lastProjectiles = [];
-
-  chartSeries.forceFilt = [];
-  chartSeries.momentFilt = [];
-  lastChartDraw = 0;
-
-  prevForceFilt = 0;
-  prevMomentFilt = 0;
-
-  document.getElementById('lblForce').innerText = "0 N";
-  document.getElementById('lblMoment').innerText = "0 Nm";
-  document.getElementById('liveInterpretation').innerText = "—";
+    metricsDefs:[],
+    metrics:{}, // id -> array
+  };
 }
 
-/* =========================================================
-   Main Loop
-========================================================= */
-async function renderLoop(ts) {
-  animationId = requestAnimationFrame(renderLoop);
-  if(!video || video.paused || video.ended) return;
+/* =========================
+   Main loop
+========================= */
+async function renderLoop(ts){
+  animationId=requestAnimationFrame(renderLoop);
+  if(!video||video.paused||video.ended) return;
 
   framesInSecond++;
-  const nowPerf = performance.now();
-  if(nowPerf - lastFPSUpdate >= 1000) {
-    detectedFPS = framesInSecond;
-    framesInSecond = 0;
-    lastFPSUpdate = nowPerf;
-    document.getElementById('fpsIndicator').innerText = "FPS: " + detectedFPS;
+  const nowPerf=performance.now();
+  if(nowPerf-lastFPSUpdate>=1000){
+    detectedFPS=framesInSecond;
+    framesInSecond=0;
+    lastFPSUpdate=nowPerf;
+    document.getElementById('fpsIndicator').innerText="FPS: "+detectedFPS;
   }
 
   frameIndex++;
+  const tSec=(ts||performance.now())/1000;
+  const dt=prevFrameTS?clamp(tSec-prevFrameTS, 1/240, 0.2):(1/60);
+  prevFrameTS=tSec;
 
-  const tSec = (ts || performance.now()) / 1000;
-  const dt = prevFrameTS ? clamp(tSec - prevFrameTS, 1/240, 0.2) : (1/60);
-  prevFrameTS = tSec;
+  let kp=null;
+  try{
+    const poses=await detector.estimatePoses(video,{flipHorizontal:false});
+    if(poses&&poses.length&&poses[0].keypoints) kp=poses[0].keypoints;
+  }catch(_){}
 
-  let kp = null;
-  try {
-    const poses = await detector.estimatePoses(video, { flipHorizontal: false });
-    if(poses && poses.length && poses[0].keypoints) kp = poses[0].keypoints;
-  } catch(_) {}
-
-  const projMode = document.getElementById('projMode').value;
-  if(projMode === "coco" && cocoModel) {
-    const everyN = parseInt(document.getElementById('projEveryN').value);
-    if(frameIndex % everyN === 0) {
-      try {
-        const preds = await cocoModel.detect(video);
-        const cls = document.getElementById('projClassHint').value;
-        const minScore = parseFloat(document.getElementById('projMinScore').value);
-        lastProjectiles = preds.filter(p => p.class === cls && p.score >= minScore).sort((a,b)=>b.score-a.score).slice(0, 2);
-      } catch(_) {}
+  // projectile
+  const projMode=document.getElementById('projMode').value;
+  if(projMode==="coco" && cocoModel){
+    const everyN=parseInt(document.getElementById('projEveryN').value);
+    if(frameIndex%everyN===0){
+      try{
+        const preds=await cocoModel.detect(video);
+        const cls=document.getElementById('projClassHint').value;
+        const minScore=parseFloat(document.getElementById('projMinScore').value);
+        lastProjectiles=preds.filter(p=>p.class===cls && p.score>=minScore).sort((a,b)=>b.score-a.score).slice(0,2);
+      }catch(_){}
     }
-  } else {
-    lastProjectiles = [];
-  }
+  }else lastProjectiles=[];
 
-  ctx.clearRect(0,0,overlay.width, overlay.height);
+  // draw
+  ctx.clearRect(0,0,overlay.width,overlay.height);
   if(kp) drawSkeleton(kp);
   drawProjectile(lastProjectiles, dt);
 
-  if(kp) {
+  if(kp){
     processSelectedMetrics(kp, dt);
+
+    const projState = computeProjectileKinematics(lastProjectiles, dt);
     const kin = processDriverKinematics(kp, dt);
-    const kinets = processDriverKinetics(kp, dt, tSec, kin);
+    const kinets = processDriverKinetics(dt, tSec, kin);
 
-    document.getElementById('liveInterpretation').innerText = buildLiveInterpretation(kin, kinets);
+    const skill = inferSkillFromCV(kp, projState, kin);
+    const liveText = buildLiveInterpretation(kin, kinets, projState, skill);
+    document.getElementById('liveInterpretation').innerText = liveText;
 
-    if(isRecording) recordSimplified(tSec, kin, kinets);
+    if(isRecording) recordFrame(tSec, kp, dt, kin, kinets, projState, skill);
 
-    prevKeypoints = kp;
+    prevKeypoints=kp;
     setStatusText("Running");
   } else {
     setStatusText("No pose detected (framing/lighting)");
@@ -841,15 +813,15 @@ async function renderLoop(ts) {
   throttleChartDraw(tSec);
 }
 
-/* =========================================================
+/* =========================
    Drawing
-========================================================= */
-function drawSkeleton(kp) {
-  const minScore = 0.30;
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = "#00ff66";
+========================= */
+function drawSkeleton(kp){
+  const minScore=0.30;
+  ctx.lineWidth=3;
+  ctx.strokeStyle="#00ff66";
 
-  const skeleton = [
+  const skeleton=[
     [KP.shoulder_L, KP.shoulder_R],
     [KP.shoulder_L, KP.elbow_L], [KP.elbow_L, KP.wrist_L],
     [KP.shoulder_R, KP.elbow_R], [KP.elbow_R, KP.wrist_R],
@@ -859,136 +831,106 @@ function drawSkeleton(kp) {
     [KP.hip_R, KP.knee_R], [KP.knee_R, KP.ankle_R]
   ];
 
-  skeleton.forEach(([i, j]) => {
-    if(kp[i]?.score > minScore && kp[j]?.score > minScore) {
-      ctx.beginPath();
-      ctx.moveTo(kp[i].x, kp[i].y);
-      ctx.lineTo(kp[j].x, kp[j].y);
-      ctx.stroke();
+  skeleton.forEach(([i,j])=>{
+    if(kp[i]?.score>minScore && kp[j]?.score>minScore){
+      ctx.beginPath(); ctx.moveTo(kp[i].x,kp[i].y); ctx.lineTo(kp[j].x,kp[j].y); ctx.stroke();
     }
   });
 
-  kp.forEach(p => {
-    if(p.score > minScore) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 5, 0, 2*Math.PI);
-      ctx.fillStyle = "red";
-      ctx.fill();
+  kp.forEach(p=>{
+    if(p.score>minScore){
+      ctx.beginPath(); ctx.arc(p.x,p.y,5,0,2*Math.PI);
+      ctx.fillStyle="red"; ctx.fill();
     }
   });
 }
 
-function drawProjectile(projs, dt) {
-  if(!projs || !projs.length) { prevProj = null; return; }
-
+function drawProjectile(projs){
+  if(!projs||!projs.length) return;
   ctx.save();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "orange";
-  ctx.fillStyle = "orange";
-  ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+  ctx.lineWidth=2;
+  ctx.strokeStyle="orange";
+  ctx.fillStyle="orange";
+  ctx.font="14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
 
-  projs.forEach(p => {
-    const [x,y,w,h] = p.bbox;
+  projs.forEach(p=>{
+    const [x,y,w,h]=p.bbox;
     ctx.strokeRect(x,y,w,h);
-    ctx.fillText(`${p.class} ${(p.score*100).toFixed(0)}%`, x, y > 18 ? y-6 : y+18);
+    ctx.fillText(`${p.class} ${(p.score*100).toFixed(0)}%`, x, y>18?y-6:y+18);
   });
-
-  const s = computeProjectileState(projs, dt);
-  if(s.valid) {
-    ctx.beginPath();
-    ctx.arc(s.cx, s.cy, 6, 0, 2*Math.PI);
-    ctx.fill();
-
-    const pxScale = 0.15;
-    ctx.beginPath();
-    ctx.moveTo(s.cx, s.cy);
-    ctx.lineTo(s.cx + (s.vx_mps/pxScale), s.cy + (s.vy_mps/pxScale));
-    ctx.stroke();
-  }
   ctx.restore();
 }
 
-/* =========================================================
-   Helpers: scale / indices
-========================================================= */
-function getPxToMeter() {
-  const hM = currentParticipant ? (currentParticipant.height / 100) : 1.75;
-  const denom = Math.max(240, overlay.height * 0.80);
-  return hM / denom;
+/* =========================
+   Scale / indices
+========================= */
+function getPxToMeter(){
+  const hM=currentParticipant?(currentParticipant.height/100):1.75;
+  const denom=Math.max(240, overlay.height*0.80);
+  return hM/denom;
 }
-
-function getJointIndex(joint, side) {
-  const map = {
-    shoulder_R: KP.shoulder_R, shoulder_L: KP.shoulder_L,
-    elbow_R: KP.elbow_R, elbow_L: KP.elbow_L,
-    wrist_R: KP.wrist_R, wrist_L: KP.wrist_L,
-    hip_R: KP.hip_R, hip_L: KP.hip_L,
-    knee_R: KP.knee_R, knee_L: KP.knee_L,
-    ankle_R: KP.ankle_R, ankle_L: KP.ankle_L
+function getJointIndex(joint, side){
+  const map={
+    shoulder_R:KP.shoulder_R, shoulder_L:KP.shoulder_L,
+    elbow_R:KP.elbow_R, elbow_L:KP.elbow_L,
+    wrist_R:KP.wrist_R, wrist_L:KP.wrist_L,
+    hip_R:KP.hip_R, hip_L:KP.hip_L,
+    knee_R:KP.knee_R, knee_L:KP.knee_L,
+    ankle_R:KP.ankle_R, ankle_L:KP.ankle_L
   };
-  const key = `${joint}_${side}`;
-  return (key in map) ? map[key] : null;
+  const key=`${joint}_${side}`;
+  return (key in map)?map[key]:null;
 }
 
-/* =========================================================
-   Selected metrics (UI only)
-========================================================= */
-function processSelectedMetrics(kp, dt) {
-  selectedMetrics.forEach(m => {
-    const v = computeMetricValue(kp, m, dt);
-    const el = document.getElementById(`val_${m.id}`);
-    if(el) el.innerText = isFinite(v) ? v.toFixed(1) : "--";
+/* =========================
+   Selected metrics
+========================= */
+function processSelectedMetrics(kp, dt){
+  selectedMetrics.forEach(m=>{
+    const v=computeMetricValue(kp, m, dt);
+    const el=document.getElementById(`val_${m.id}`);
+    if(el) el.innerText=isFinite(v)?v.toFixed(3):"--";
   });
 }
 
-function computeMetricValue(kp, m, dt) {
-  if(m.type === "angle") return getJointAngleDeg(kp, m.joint, m.side);
-  if(m.type === "linVel") {
-    const idx = getJointIndex(m.joint, m.side);
-    return idx == null ? NaN : getLinearVelMps(kp, idx, dt);
+function computeMetricValue(kp, m, dt){
+  if(m.type==="angle") return getJointAngleDeg(kp, m.joint, m.side);
+  if(m.type==="linVel"){
+    const idx=getJointIndex(m.joint, m.side);
+    return idx==null?NaN:getLinearVelMps(kp, idx, dt);
   }
-  if(m.type === "angVel") {
-    const ang = getJointAngleDeg(kp, m.joint, m.side);
-    const prev = prevAngleMap.get(m.id);
-    prevAngleMap.set(m.id, ang);
-    if(prev == null || !isFinite(prev) || !isFinite(ang)) return 0;
-    let d = ang - prev;
-    if(d > 180) d -= 360;
-    if(d < -180) d += 360;
-    return d / Math.max(1e-4, dt);
+  if(m.type==="angVel"){
+    const angDeg=getJointAngleDeg(kp, m.joint, m.side);
+    const prevDeg=prevAngleMapDeg.get(m.id);
+    prevAngleMapDeg.set(m.id, angDeg);
+    if(prevDeg==null || !isFinite(prevDeg) || !isFinite(angDeg)) return 0;
+
+    let dDeg=angDeg-prevDeg;
+    if(dDeg>180) dDeg-=360;
+    if(dDeg<-180) dDeg+=360;
+
+    const dRad = dDeg * Math.PI / 180;
+    return dRad / Math.max(1e-4, dt); // rad/s
   }
   return NaN;
 }
 
-function getJointAngleDeg(kp, joint, side) {
-  const minScore = 0.30;
+function getJointAngleDeg(kp, joint, side){
+  const minScore=0.30;
   let a=null,b=null,c=null;
 
-  if(joint === "elbow")      { a=`shoulder_${side}`; b=`elbow_${side}`; c=`wrist_${side}`; }
-  else if(joint === "knee")  { a=`hip_${side}`;      b=`knee_${side}`;  c=`ankle_${side}`; }
-  else if(joint === "hip")   { a=`shoulder_${side}`; b=`hip_${side}`;   c=`knee_${side}`; }
-  else if(joint === "shoulder"){ a=`hip_${side}`; b=`shoulder_${side}`; c=`elbow_${side}`; }
-  else if(joint === "wrist") {
-    const e = kp[getJointIndex("elbow", side)];
-    const w = kp[getJointIndex("wrist", side)];
-    if(!e || !w || e.score < minScore || w.score < minScore) return NaN;
-    const ang = Math.atan2(w.y - e.y, w.x - e.x) * 180/Math.PI;
-    return Math.abs(normalizeDeg(ang));
-  }
-  else if(joint === "ankle") {
-    const k = kp[getJointIndex("knee", side)];
-    const a2 = kp[getJointIndex("ankle", side)];
-    if(!k || !a2 || k.score < minScore || a2.score < minScore) return NaN;
-    const ang = Math.atan2(a2.x - k.x, a2.y - k.y) * 180/Math.PI;
-    return Math.abs(normalizeDeg(ang));
-  }
+  if(joint==="elbow"){ a=`shoulder_${side}`; b=`elbow_${side}`; c=`wrist_${side}`; }
+  else if(joint==="knee"){ a=`hip_${side}`; b=`knee_${side}`; c=`ankle_${side}`; }
+  else if(joint==="hip"){ a=`shoulder_${side}`; b=`hip_${side}`; c=`knee_${side}`; }
+  else if(joint==="shoulder"){ a=`hip_${side}`; b=`shoulder_${side}`; c=`elbow_${side}`; }
+  else if(joint==="ankle"){ a=`knee_${side}`; b=`ankle_${side}`; c=`foot_${side}`; return NaN; } // not supported (no foot kp in MoveNet)
   else return NaN;
 
-  const pA = kp[getJointIndex(a.split("_")[0], a.split("_")[1])];
-  const pB = kp[getJointIndex(b.split("_")[0], b.split("_")[1])];
-  const pC = kp[getJointIndex(c.split("_")[0], c.split("_")[1])];
-  if(!pA || !pB || !pC) return NaN;
-  if(pA.score < minScore || pB.score < minScore || pC.score < minScore) return NaN;
+  const pA=kp[getJointIndex(a.split("_")[0], a.split("_")[1])];
+  const pB=kp[getJointIndex(b.split("_")[0], b.split("_")[1])];
+  const pC=kp[getJointIndex(c.split("_")[0], c.split("_")[1])];
+  if(!pA||!pB||!pC) return NaN;
+  if(pA.score<minScore||pB.score<minScore||pC.score<minScore) return NaN;
 
   const rad =
     Math.atan2(pC.y - pB.y, pC.x - pB.x) -
@@ -999,298 +941,425 @@ function getJointAngleDeg(kp, joint, side) {
   return deg;
 }
 
-function normalizeDeg(d) {
-  let x = d % 360;
-  if(x < 0) x += 360;
-  return x;
-}
-
-function getLinearVelMps(kp, idx, dt) {
+function getLinearVelMps(kp, idx, dt){
   if(!prevKeypoints || !kp[idx] || !prevKeypoints[idx]) return 0;
-  const curr = kp[idx], prev = prevKeypoints[idx];
-  if(curr.score < 0.30 || prev.score < 0.30) return 0;
-  const scale = getPxToMeter();
-  const dx = (curr.x - prev.x) * scale;
-  const dy = (curr.y - prev.y) * scale;
-  return Math.hypot(dx, dy) / Math.max(1e-4, dt);
+  const curr=kp[idx], prev=prevKeypoints[idx];
+  if(curr.score<0.30 || prev.score<0.30) return 0;
+  const scale=getPxToMeter();
+  const dx=(curr.x-prev.x)*scale;
+  const dy=(curr.y-prev.y)*scale;
+  return Math.hypot(dx,dy)/Math.max(1e-4, dt);
 }
 
-/* =========================================================
-   Driver kinematics (export + model)
-========================================================= */
-function processDriverKinematics(kp, dt) {
-  const jName = document.getElementById('kinJoint').value;
-  const side = document.getElementById('kinSide').value;
-  const idx = getJointIndex(jName, side);
-  if(idx == null) return null;
+/* =========================
+   Driver kinematics
+========================= */
+function processDriverKinematics(kp, dt){
+  const jName=document.getElementById('kinJoint').value;
+  const side=document.getElementById('kinSide').value;
+  const idx=getJointIndex(jName, side);
+  if(idx==null) return null;
 
-  const p = kp[idx];
-  if(!p || p.score < 0.30) return null;
+  const p=kp[idx];
+  if(!p || p.score<0.30) return null;
 
-  const v = getLinearVelMps(kp, idx, dt);
+  const v_mps = getLinearVelMps(kp, idx, dt);
 
-  const ang = getJointAngleDeg(kp, jName, side);
-  let w = 0;
-  if(prevAngleDriver != null && isFinite(prevAngleDriver) && isFinite(ang)) {
-    let d = ang - prevAngleDriver;
-    if(d > 180) d -= 360;
-    if(d < -180) d += 360;
-    w = d / Math.max(1e-4, dt);
+  const angDeg = getJointAngleDeg(kp, jName, side);
+  let w_radps = 0;
+  if(prevAngleDriverDeg != null && isFinite(prevAngleDriverDeg) && isFinite(angDeg)){
+    let dDeg = angDeg - prevAngleDriverDeg;
+    if(dDeg>180) dDeg-=360;
+    if(dDeg<-180) dDeg+=360;
+    w_radps = (dDeg * Math.PI/180) / Math.max(1e-4, dt);
   }
-  prevAngleDriver = ang;
+  prevAngleDriverDeg = angDeg;
 
-  const scale = getPxToMeter();
-  if(prevDriverPos && prevDriverPos.ok) {
-    const dx = (p.x - prevDriverPos.x) * scale;
-    const dy = (p.y - prevDriverPos.y) * scale;
-    cumDisp += Math.hypot(dx, dy);
+  const scale=getPxToMeter();
+  if(prevDriverPos && prevDriverPos.ok){
+    const dx=(p.x-prevDriverPos.x)*scale;
+    const dy=(p.y-prevDriverPos.y)*scale;
+    cumDisp += Math.hypot(dx,dy);
   }
-  prevDriverPos = { x:p.x, y:p.y, ok:true };
-
-  const proj = computeProjectileState(lastProjectiles, dt);
+  prevDriverPos={x:p.x,y:p.y,ok:true};
 
   return {
     driver: `${jName}_${side}`,
-    v_mps: v,
-    angle_deg: isFinite(ang) ? ang : 0,
-    angVel_dps: w,
-    disp_m: cumDisp,
-    projValid: proj.valid ? 1 : 0,
-    projSpeed_mps: proj.valid ? proj.speed_mps : 0
+    v_mps,
+    angle_rad: (isFinite(angDeg)?angDeg:0) * Math.PI/180,
+    angVel_radps: w_radps,
+    disp_m: cumDisp
   };
 }
 
-/* =========================================================
-   Kinetics Driver (low-pass clean)
-========================================================= */
-let prevForceFilt = 0;
-let prevMomentFilt = 0;
+/* =========================
+   Projectile kinematics (position/velocity/acceleration)
+========================= */
+function computeProjectileKinematics(projs, dt){
+  const out={
+    valid:false,
+    x_m:0, y_m:0,
+    vx_mps:0, vy_mps:0,
+    ax_mps2:0, ay_mps2:0,
+    speed_mps:0, accel_mps2:0,
+    angle_deg:0
+  };
+  if(!projs || !projs.length){
+    prevProjState=null;
+    return out;
+  }
 
-function processDriverKinetics(kp, dt, tSec, kin) {
-  if(!currentParticipant || !prevKeypoints || !kin) return null;
+  const best=projs[0];
+  const [x,y,w,h]=best.bbox;
+  const cx=x+w/2, cy=y+h/2;
+
+  const s=getPxToMeter();
+  out.valid=true;
+  out.x_m = cx*s;
+  out.y_m = cy*s;
+
+  // velocity
+  if(prevProjState && prevProjState.valid){
+    const vx=(out.x_m - prevProjState.x_m)/Math.max(1e-4, dt);
+    const vy=(out.y_m - prevProjState.y_m)/Math.max(1e-4, dt);
+    // mild smoothing
+    const a=0.35;
+    out.vx_mps = a*vx + (1-a)*(prevProjState.vx_mps||0);
+    out.vy_mps = a*vy + (1-a)*(prevProjState.vy_mps||0);
+  }
+
+  out.speed_mps = Math.hypot(out.vx_mps, out.vy_mps);
+
+  // acceleration
+  if(prevProjState && prevProjState.valid){
+    const ax=(out.vx_mps - (prevProjState.vx_mps||0))/Math.max(1e-4, dt);
+    const ay=(out.vy_mps - (prevProjState.vy_mps||0))/Math.max(1e-4, dt);
+    const a2=0.35;
+    out.ax_mps2 = a2*ax + (1-a2)*(prevProjState.ax_mps2||0);
+    out.ay_mps2 = a2*ay + (1-a2)*(prevProjState.ay_mps2||0);
+  }
+  out.accel_mps2 = Math.hypot(out.ax_mps2, out.ay_mps2);
+
+  out.angle_deg = Math.atan2(-out.vy_mps, out.vx_mps)*180/Math.PI;
+
+  prevProjState = { ...out };
+  return out;
+}
+
+/* =========================
+   Kinetics (extra low-pass smoothing)
+========================= */
+function processDriverKinetics(dt, tSec, kin){
+  if(!currentParticipant || !kin) return null;
 
   const driverJoint = kin.driver.split("_")[0];
-  let seg = "thigh";
-  if(driverJoint === "knee") seg = "shank";
-  if(driverJoint === "ankle") seg = "foot";
-  if(driverJoint === "shoulder") seg = "upperArm";
-  if(driverJoint === "elbow") seg = "forearm";
-  if(driverJoint === "wrist") seg = "hand";
+
+  let seg="thigh";
+  if(driverJoint==="knee") seg="shank";
+  if(driverJoint==="ankle") seg="foot";
+  if(driverJoint==="shoulder") seg="upperArm";
+  if(driverJoint==="elbow") seg="forearm";
+  if(driverJoint==="wrist") seg="hand";
 
   const segMass = currentParticipant.mass * (SEG_MASS[seg] || 0.10);
 
-  const prevV = rec.driverLinVel.length ? rec.driverLinVel[rec.driverLinVel.length - 1] : kin.v_mps;
+  const prevV = rec.driverLinVel_mps.length ? rec.driverLinVel_mps[rec.driverLinVel_mps.length-1] : kin.v_mps;
   const accel = Math.abs(kin.v_mps - prevV) / Math.max(1e-4, dt);
   const forceRaw = segMass * accel;
 
-  const prevW = rec.driverAngVel.length ? rec.driverAngVel[rec.driverAngVel.length - 1] : kin.angVel_dps;
-  const angAccel_dps2 = (kin.angVel_dps - prevW) / Math.max(1e-4, dt);
-  const alpha = angAccel_dps2 * Math.PI / 180;
+  const prevW = rec.driverAngVel_rads.length ? rec.driverAngVel_rads[rec.driverAngVel_rads.length-1] : kin.angVel_radps;
+  const alpha = (kin.angVel_radps - prevW) / Math.max(1e-4, dt); // rad/s^2
 
   const L = estimateSegmentLengthM(seg);
   const k = SEG_K[seg] || 0.30;
   const I = segMass * Math.pow(k * L, 2);
-
   const momentRaw = I * alpha;
 
   const hz = parseFloat(document.getElementById('cutoffHz').value);
-  const f1 = lowPass(prevForceFilt, forceRaw, dt, hz);
-  const m1 = lowPass(prevMomentFilt, momentRaw, dt, hz);
-  const forceFilt = lowPass(prevForceFilt, f1, dt, hz);
-  const momentFilt = lowPass(prevMomentFilt, m1, dt, hz);
 
-  prevForceFilt = forceFilt;
-  prevMomentFilt = momentFilt;
+  const forceFilt = cascadedLowPass(forceRaw, forceStages, dt, hz);
+  const momentFilt = cascadedLowPass(momentRaw, momentStages, dt, hz);
 
-  document.getElementById('lblForce').innerText = forceFilt.toFixed(0) + " N";
-  document.getElementById('lblMoment').innerText = momentFilt.toFixed(2) + " Nm";
+  document.getElementById('lblKinetics').innerText =
+    `F: ${forceFilt.toFixed(0)} N | M: ${momentFilt.toFixed(3)} Nm`;
 
-  pushChart('forceFilt', tSec, forceFilt);
-  pushChart('momentFilt', tSec, momentFilt);
+  pushChart('force', tSec, forceFilt);
+  pushChart('moment', tSec, momentFilt);
 
   return { forceFilt_N: forceFilt, momentFilt_Nm: momentFilt };
 }
-
-function estimateSegmentLengthM(seg) {
+function estimateSegmentLengthM(seg){
   const h = currentParticipant ? (currentParticipant.height/100) : 1.75;
   const frac = { thigh:0.245, shank:0.246, foot:0.152, upperArm:0.186, forearm:0.146, hand:0.108, trunk:0.288 };
   return h * (frac[seg] || 0.20);
 }
-
-function lowPass(prev, curr, dt, fc) {
+function lowPass(prev, curr, dt, fc){
   const rc = 1.0 / (2 * Math.PI * fc);
   const alpha = dt / (rc + dt);
   return prev + alpha * (curr - prev);
 }
-
-/* =========================================================
-   Charts
-========================================================= */
-function pushChart(key, t, v) {
-  const win = parseInt(document.getElementById('windowSeconds').value);
-  chartSeries[key].push({t, v});
-  while(chartSeries[key].length && chartSeries[key][0].t < t - win) chartSeries[key].shift();
+function cascadedLowPass(x, stages, dt, fc){
+  let y = x;
+  for(let i=0;i<stages.length;i++){
+    stages[i] = lowPass(stages[i], y, dt, fc);
+    y = stages[i];
+  }
+  return y;
 }
 
-function throttleChartDraw(t) {
-  if(t - lastChartDraw < 0.1) return;
-  lastChartDraw = t;
-  drawChart('chartForce', 'forceFilt');
-  drawChart('chartMoment', 'momentFilt');
-}
-
-function drawChart(id, key) {
-  const c = document.getElementById(id);
-  const g = c.getContext('2d');
-  const w = c.width = c.clientWidth;
-  const h = c.height = c.clientHeight;
-  g.clearRect(0,0,w,h);
-
-  g.strokeStyle="#eee";
-  g.beginPath(); g.moveTo(0,h/2); g.lineTo(w,h/2); g.stroke();
-
-  const data = chartSeries[key];
-  if(!data || data.length < 2) return;
-
-  let max = 1;
-  data.forEach(d => { max = Math.max(max, Math.abs(d.v)); });
-
-  const win = parseInt(document.getElementById('windowSeconds').value);
-  const now = data[data.length-1].t;
-
-  g.strokeStyle = "#667eea";
-  g.lineWidth = 2;
-  g.beginPath();
-
-  data.forEach((pt, i) => {
-    const x = ((win - (now - pt.t)) / win) * w;
-    const y = h - ((pt.v / (max*1.2)) * (h/2) + h/2);
-    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
-  });
-  g.stroke();
-}
-
-/* =========================================================
-   Projectile state
-========================================================= */
-function computeProjectileState(projs, dt) {
-  const state = { valid:false, cx:0, cy:0, vx_mps:0, vy_mps:0, speed_mps:0, angle_deg:0 };
-  if(!projs || !projs.length) { prevProj = null; return state; }
-
-  const best = projs[0];
-  const [x,y,w,h] = best.bbox;
-  const cx = x + w/2;
-  const cy = y + h/2;
-
-  state.valid = true;
-  state.cx = cx; state.cy = cy;
-
-  const scale = getPxToMeter();
-  if(prevProj && prevProj.valid) {
-    const vx = ((cx - prevProj.cx) * scale) / Math.max(1e-4, dt);
-    const vy = ((cy - prevProj.cy) * scale) / Math.max(1e-4, dt);
-    const a = 0.35;
-    state.vx_mps = a*vx + (1-a)*(prevProj.vx_mps || 0);
-    state.vy_mps = a*vy + (1-a)*(prevProj.vy_mps || 0);
+/* =========================
+   CV Skill Inference (heuristics)
+   - Uses projectile + closest effector (wrist/ankle)
+   - Uses whether both wrists are near (two-hand)
+========================= */
+function inferSkillFromCV(kp, proj, kin){
+  if(!proj.valid){
+    return { skill:"No projectile / Unknown", confidence:0.2, effector:"—", dist_m:null, rationale:"No reliable projectile track." };
   }
 
-  state.speed_mps = Math.hypot(state.vx_mps, state.vy_mps);
-  state.angle_deg = Math.atan2(-state.vy_mps, state.vx_mps) * 180/Math.PI;
+  const s=getPxToMeter();
+  const joints=[
+    {name:"wrist_R", idx:KP.wrist_R},
+    {name:"wrist_L", idx:KP.wrist_L},
+    {name:"ankle_R", idx:KP.ankle_R},
+    {name:"ankle_L", idx:KP.ankle_L},
+  ];
 
-  prevProj = {...state, valid:true};
-  return state;
+  const px = proj.x_m / s, py = proj.y_m / s; // back to pixel for distance by kp coords
+  const dists=[];
+  joints.forEach(j=>{
+    const p=kp[j.idx];
+    if(p && p.score>0.30){
+      const dx=(p.x-px)*s;
+      const dy=(p.y-py)*s;
+      dists.push({name:j.name, d:Math.hypot(dx,dy)});
+    }
+  });
+  dists.sort((a,b)=>a.d-b.d);
+  const best=dists.length?dists[0]:{name:"—",d:999};
+
+  // check two-hand proximity
+  const wr = dists.find(x=>x.name==="wrist_R")?.d ?? 999;
+  const wl = dists.find(x=>x.name==="wrist_L")?.d ?? 999;
+  const bothHandsNear = (wr<0.20 && wl<0.20); // 20 cm threshold (scaled)
+  const ankleNear = best.name.startsWith("ankle") && best.d < 0.25;
+  const wristNear = best.name.startsWith("wrist") && best.d < 0.25;
+
+  // timing cue: high ω (rotation) + wrist near -> throw/strike
+  const w = Math.abs(kin?.angVel_radps||0);
+  const vproj = proj.speed_mps;
+
+  let skill="Unknown projectile skill";
+  let confidence=0.35;
+  let rationale="Projectile tracked, but pattern unclear.";
+
+  if(ankleNear){
+    skill="Kick (instep/strike)";
+    confidence=0.75;
+    rationale="Projectile closest to ankle during event window → likely foot contact skill.";
+  } else if(bothHandsNear){
+    skill="Two-hand shot / throw";
+    confidence=0.70;
+    rationale="Both wrists near projectile → likely two-hand release/shot.";
+  } else if(wristNear && w>6){
+    // differentiate throw vs strike via projectile angle and “hand-path”
+    if(vproj>0 && proj.angle_deg>-20 && proj.angle_deg<70){
+      skill="Overhand throw / pitch";
+      confidence=0.72;
+      rationale="Projectile closest to wrist with high joint ω → likely throw-like skill.";
+    } else {
+      skill="Strike / swing (bat/racket-like proxy)";
+      confidence=0.60;
+      rationale="Wrist contact + high ω, but projectile direction suggests strike/swing timing.";
+    }
+  } else if(wristNear){
+    skill="Underhand toss / gentle throw";
+    confidence=0.55;
+    rationale="Projectile closest to wrist but ω is low → likely toss/placement.";
+  }
+
+  return { skill, confidence, effector: best.name, dist_m: best.d, rationale };
 }
 
-/* =========================================================
+/* =========================
+   Live interpretation
+========================= */
+function buildLiveInterpretation(kin, kinets, proj, skill){
+  const parts=[];
+  parts.push(`Skill guess: ${skill.skill} (conf ${skill.confidence.toFixed(2)})`);
+  parts.push(`Effector: ${skill.effector} dist ${skill.dist_m!=null?skill.dist_m.toFixed(3):"—"} m`);
+  if(kin){
+    parts.push(`Driver: ${kin.driver}`);
+    parts.push(`v [m/s]: ${kin.v_mps.toFixed(3)} | ω [rad/s]: ${kin.angVel_radps.toFixed(3)} | θ [rad]: ${kin.angle_rad.toFixed(3)} | disp [m]: ${kin.disp_m.toFixed(3)}`);
+  }
+  if(proj.valid){
+    parts.push(`Projectile: speed [m/s] ${proj.speed_mps.toFixed(3)} | angle [deg] ${proj.angle_deg.toFixed(1)} | a [m/s²] ${proj.accel_mps2.toFixed(2)}`);
+  }
+  if(kinets){
+    parts.push(`Force [N]: ${kinets.forceFilt_N.toFixed(0)} | Moment [Nm]: ${kinets.momentFilt_Nm.toFixed(4)}`);
+  }
+  parts.push(`Why: ${skill.rationale}`);
+  return parts.join("\n");
+}
+
+/* =========================
    Recording
-========================================================= */
-function toggleRecording() {
-  const btn = document.getElementById('recordBtn');
-  if(!isRecording) {
+========================= */
+function toggleRecording(){
+  const btn=document.getElementById('recordBtn');
+  if(!isRecording){
     if(!currentParticipant) return showStatus("Set a participant first.", "error");
-    isRecording = true;
+    isRecording=true;
 
-    rec = { t:[], driverLinVel:[], driverAngVel:[], driverAngle:[], driverDisp:[], forceFilt:[], momentFilt:[], projSpeed:[], projValid:[] };
-    prevForceFilt = 0;
-    prevMomentFilt = 0;
-    prevAngleDriver = null;
-    prevDriverPos = null;
-    cumDisp = 0;
+    rec=resetRec();
+    rec.metricsDefs = selectedMetrics.map(m => ({...m, units: metricUnits(m.type)}));
+    rec.metrics = {};
+    rec.metricsDefs.forEach(m => rec.metrics[m.id] = []);
 
-    btn.textContent = "Stop Recording";
-    btn.className = "btn btn-danger";
+    prevAngleDriverDeg=null;
+    prevAngleMapDeg.clear();
+
+    prevDriverPos=null;
+    cumDisp=0;
+
+    prevProjState=null;
+
+    forceStages=new Array(FILTER_ORDER).fill(0);
+    momentStages=new Array(FILTER_ORDER).fill(0);
+
+    btn.textContent="Stop Recording";
+    btn.className="btn btn-danger";
     showStatus("Recording started...", "info");
     setStatusText("Recording...");
   } else {
-    isRecording = false;
-    btn.textContent = "Start Recording";
-    btn.className = "btn btn-success";
+    isRecording=false;
+    btn.textContent="Start Recording";
+    btn.className="btn btn-success";
     showStatus(`Recording saved. ${rec.t.length} samples.`, "success");
     setStatusText("Running");
   }
 }
 
-function recordSimplified(tSec, kin, kinets) {
+function recordFrame(tSec, kp, dt, kin, kinets, proj, skill){
   if(!kin) return;
+
   rec.t.push(tSec);
-  rec.driverLinVel.push(kin.v_mps || 0);
-  rec.driverAngVel.push(kin.angVel_dps || 0);
-  rec.driverAngle.push(kin.angle_deg || 0);
-  rec.driverDisp.push(kin.disp_m || 0);
 
-  rec.forceFilt.push(kinets?.forceFilt_N || 0);
-  rec.momentFilt.push(kinets?.momentFilt_Nm || 0);
+  rec.driverLinVel_mps.push(kin.v_mps || 0);
+  rec.driverAngVel_rads.push(kin.angVel_radps || 0);
+  rec.driverAngle_rad.push(kin.angle_rad || 0);
+  rec.driverDisp_m.push(kin.disp_m || 0);
 
-  rec.projValid.push(kin.projValid || 0);
-  rec.projSpeed.push(kin.projSpeed_mps || 0);
+  rec.forceFilt_N.push(kinets?.forceFilt_N || 0);
+  rec.momentFilt_Nm.push(kinets?.momentFilt_Nm || 0);
+
+  // projectile
+  rec.projValid.push(proj.valid?1:0);
+  rec.projX_m.push(proj.valid?proj.x_m:0);
+  rec.projY_m.push(proj.valid?proj.y_m:0);
+  rec.projVx_mps.push(proj.valid?proj.vx_mps:0);
+  rec.projVy_mps.push(proj.valid?proj.vy_mps:0);
+  rec.projSpeed_mps.push(proj.valid?proj.speed_mps:0);
+  rec.projAx_mps2.push(proj.valid?proj.ax_mps2:0);
+  rec.projAy_mps2.push(proj.valid?proj.ay_mps2:0);
+  rec.projAccel_mps2.push(proj.valid?proj.accel_mps2:0);
+  rec.projAngle_deg.push(proj.valid?proj.angle_deg:0);
+
+  // skill inference logging
+  rec.effectorName.push(skill.effector||"—");
+  rec.effectorDist_m.push(isFinite(skill.dist_m)?skill.dist_m:0);
+  rec.inferredSkill.push(skill.skill||"Unknown");
+
+  // selected metrics
+  if(rec.metricsDefs && rec.metrics){
+    rec.metricsDefs.forEach(m=>{
+      let val = computeMetricValue(kp, m, dt);
+      if(!isFinite(val)) val = 0;
+      rec.metrics[m.id].push(val);
+    });
+  }
 }
 
-function snapshotPNG() {
+/* =========================
+   Snapshot
+========================= */
+function snapshotPNG(){
   if(!video || video.paused) return showStatus("Start Camera/Upload first.", "error");
-  const c = document.createElement('canvas');
-  const w = overlay.width, h = overlay.height;
-  c.width = w; c.height = h;
-  const g = c.getContext('2d');
-  try { g.drawImage(video, 0, 0, w, h); } catch(_) {}
-  try { g.drawImage(overlay, 0, 0, w, h); } catch(_) {}
+  const c=document.createElement('canvas');
+  const w=overlay.width, h=overlay.height;
+  c.width=w; c.height=h;
+  const g=c.getContext('2d');
+  try{ g.drawImage(video,0,0,w,h); }catch(_){}
+  try{ g.drawImage(overlay,0,0,w,h); }catch(_){}
 
-  const a = document.createElement('a');
-  a.href = c.toDataURL("image/png");
-  a.download = `snapshot_${Date.now()}.png`;
+  const a=document.createElement('a');
+  a.href=c.toDataURL("image/png");
+  a.download=`snapshot_${Date.now()}.png`;
   a.click();
 }
 
-/* =========================================================
-   XLSX Export (event-based phases)
-   Marker events:
-   - Peak projectile speed (valid frames only)
-   - Peak angular velocity (driver)
-   Phases:
-   A) Preparation: start -> min(peakAngVel, peakProjSpeed) - buffer
-   B) Acceleration/Cocking: around peakAngVel (window)
-   C) Release/Impact: around peakProjSpeed (window)
-   D) Follow-through: after release window -> end
-========================================================= */
-function downloadData() {
+/* =========================
+   Phases (skill-aware event segmentation)
+   Events:
+   - peak projectile speed
+   - peak driver ω
+   - inferred "release/contact": when effector distance increases sharply while projectile valid
+========================= */
+function segmentPhases(rec){
+  const n=rec.t.length;
+  if(n<12) return { events:{}, list:[{name:"Full",i0:0,i1:n-1}] };
+
+  const peakProjIdx = argMaxAbsWhere(rec.projSpeed_mps, rec.projValid);
+  const peakProjSpeed = peakProjIdx>=0?Math.abs(rec.projSpeed_mps[peakProjIdx]):0;
+
+  const peakAngVelIdx = argMaxAbs(rec.driverAngVel_rads);
+  const peakAngVel = Math.abs(rec.driverAngVel_rads[peakAngVelIdx]||0);
+
+  // release/contact: big rise in effector distance
+  let releaseIdx = -1;
+  for(let i=2;i<n;i++){
+    if((rec.projValid[i]||0)!==1) continue;
+    const d0=rec.effectorDist_m[i-1]||0;
+    const d1=rec.effectorDist_m[i]||0;
+    if(d1-d0 > 0.06){ // 6 cm jump = separation event
+      releaseIdx = i;
+      break;
+    }
+  }
+  if(releaseIdx<0) releaseIdx = (peakProjIdx>=0?peakProjIdx:peakAngVelIdx);
+
+  const wRel=Math.max(3, Math.floor(n*0.08));
+  const wAng=Math.max(3, Math.floor(n*0.10));
+
+  const prepEnd = clampInt(Math.min(releaseIdx, peakAngVelIdx)-2, 0, n-1);
+
+  const phases = [
+    { name:"Preparation", i0:0, i1:prepEnd },
+    { name:"Acceleration", i0:clampInt(peakAngVelIdx-wAng,0,n-1), i1:clampInt(peakAngVelIdx+wAng,0,n-1) },
+    { name:"Release/Contact", i0:clampInt(releaseIdx-wRel,0,n-1), i1:clampInt(releaseIdx+wRel,0,n-1) },
+    { name:"Follow-through", i0:clampInt(releaseIdx+wRel,0,n-1), i1:n-1 }
+  ];
+
+  return {
+    events:{ peakProjIdx, peakProjSpeed, peakAngVelIdx, peakAngVel, releaseIdx },
+    list: phases
+  };
+}
+
+/* =========================
+   XLSX Export (adds projectile summary)
+========================= */
+function downloadData(){
   if(!rec.t.length) return showStatus("No recorded data. Press Start Recording first.", "error");
 
-  const profile = currentParticipant || participants[0] || {name:"",sex:"",age:"",mass:"",height:""};
+  const profile=currentParticipant || participants[0] || {name:"",sex:"",age:"",mass:"",height:""};
   const driver = `${document.getElementById('kinJoint').value}_${document.getElementById('kinSide').value}`;
+  const phasesObj = segmentPhases(rec);
 
-  const phases = segmentPhasesEventBased(rec);
+  // Skill (overall): majority vote
+  const skillOverall = mode(rec.inferredSkill);
 
-  const kinSummaryRows = [];
-  kinSummaryRows.push(...makeKinSummaryBlock("Overall", driver, rangeAll(phases), rec, phases.events));
-  phases.list.forEach(ph => kinSummaryRows.push(...makeKinSummaryBlock(ph.name, driver, ph, rec, phases.events)));
-
-  const kineticsRows = rec.t.map((t, i) => ({
-    time_s: round(t, 4),
-    forceFilt_N: round(rec.forceFilt[i] || 0, 3),
-    momentFilt_Nm: round(rec.momentFilt[i] || 0, 4)
-  }));
-
-  const modelRows = buildTechnicalModel(profile, driver, phases, rec);
-
+  // 1) Profile
   const profileRows = [
     { field:"name", value: profile.name },
     { field:"sex", value: profile.sex },
@@ -1298,303 +1367,355 @@ function downloadData() {
     { field:"mass_kg", value: profile.mass },
     { field:"height_cm", value: profile.height },
     { field:"driver_joint", value: driver },
+    { field:"skill_inferred_overall", value: skillOverall },
     { field:"source", value: sessionMeta.source || "" },
     { field:"camera_facing", value: sessionMeta.facing || "" },
     { field:"fps_requested", value: sessionMeta.fpsRequested || "" },
     { field:"fps_detected_est", value: detectedFPS || "" },
     { field:"started_at", value: sessionMeta.startedAt || "" },
-    { field:"notes", value:"Event markers: peak projectile speed + peak angular velocity. Kinetics are simplified proxies; interpret trends, not lab-grade ground truth." }
+    { field:"notes", value:"ω in [rad/s]. Angles/ROM exported as [rad]. Projectile motion exported. Kinetics are simplified proxies (trend)."}
   ];
 
-  const wb = XLSX.utils.book_new();
+  // 2) Kinematics summary (driver + selected metrics)
+  const kinSummaryRows = [];
+  kinSummaryRows.push(driverSummary("Overall", driver, {i0:0,i1:rec.t.length-1}, phasesObj, skillOverall));
+  phasesObj.list.forEach(ph => kinSummaryRows.push(driverSummary(ph.name, driver, ph, phasesObj, skillOverall)));
+
+  if(rec.metricsDefs && rec.metricsDefs.length){
+    kinSummaryRows.push({ phase:"—", driver_joint:"—", metric_name:"Selected metrics (phase summaries below)", metric_unit:"", metric_peak:"", metric_avg:"", metric_ROM_if_angle_rad:"" });
+    rec.metricsDefs.forEach(def=>{
+      kinSummaryRows.push(metricSummary(def, "Overall", {i0:0,i1:rec.t.length-1}));
+      phasesObj.list.forEach(ph=>kinSummaryRows.push(metricSummary(def, ph.name, ph)));
+    });
+  }
+
+  // 2b) Kinematics time-series (includes projectile kinematics)
+  const kinTSRows=[];
+  for(let i=0;i<rec.t.length;i++){
+    const row={
+      "time_s": round(rec.t[i],4),
+      "driver_linVel[m/s]": round(rec.driverLinVel_mps[i]||0,6),
+      "driver_angVel[rad/s]": round(rec.driverAngVel_rads[i]||0,6),
+      "driver_angle[rad]": round(rec.driverAngle_rad[i]||0,6),
+      "driver_disp[m]": round(rec.driverDisp_m[i]||0,6),
+
+      "projectile_valid[0/1]": rec.projValid[i]||0,
+      "proj_x[m]": round(rec.projX_m[i]||0,6),
+      "proj_y[m]": round(rec.projY_m[i]||0,6),
+      "proj_vx[m/s]": round(rec.projVx_mps[i]||0,6),
+      "proj_vy[m/s]": round(rec.projVy_mps[i]||0,6),
+      "proj_speed[m/s]": round(rec.projSpeed_mps[i]||0,6),
+      "proj_ax[m/s^2]": round(rec.projAx_mps2[i]||0,6),
+      "proj_ay[m/s^2]": round(rec.projAy_mps2[i]||0,6),
+      "proj_accel[m/s^2]": round(rec.projAccel_mps2[i]||0,6),
+      "proj_angle[deg]": round(rec.projAngle_deg[i]||0,3),
+
+      "effector": rec.effectorName[i]||"—",
+      "effector_dist[m]": round(rec.effectorDist_m[i]||0,6),
+      "skill_guess": rec.inferredSkill[i]||"Unknown"
+    };
+
+    if(rec.metricsDefs && rec.metrics){
+      rec.metricsDefs.forEach(def=>{
+        const val = (rec.metrics[def.id] && rec.metrics[def.id][i]!=null) ? rec.metrics[def.id][i] : 0;
+        if(def.type==="angle") row[`${def.id}[rad]`] = round((val*Math.PI/180),6);
+        else if(def.type==="angVel") row[`${def.id}[rad/s]`] = round(val,6);
+        else row[`${def.id}[m/s]`] = round(val,6);
+      });
+    }
+
+    kinTSRows.push(row);
+  }
+
+  // 2c) Projectile summary by phase
+  const projSummaryRows=[];
+  projSummaryRows.push(projectileSummary("Overall", {i0:0,i1:rec.t.length-1}));
+  phasesObj.list.forEach(ph=>projSummaryRows.push(projectileSummary(ph.name, ph)));
+
+  // 3) Kinetics time-series
+  const kineticsRows = rec.t.map((t,i)=>({
+    "time_s": round(t,4),
+    "Force_filt[N]": round(rec.forceFilt_N[i]||0,6),
+    "Moment_filt[Nm]": round(rec.momentFilt_Nm[i]||0,8)
+  }));
+
+  // 4) Technical model / recommendations (skill-aware)
+  const modelRows = buildTechnicalModel(skillOverall, driver, phasesObj);
+
+  const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(profileRows), "1_Profile");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kinSummaryRows), "2_Kinematics_Summary");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kinTSRows), "2b_Kinematics_TimeSeries");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(projSummaryRows), "2c_Projectile_Summary");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kineticsRows), "3_Kinetics_ForceMoment_Time");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(modelRows), "4_Technical_Model");
 
-  const fname = `sport_analysis_${(profile.name||"participant").replace(/\s+/g,"_")}_${Date.now()}.xlsx`;
+  const fname=`sport_analysis_${(profile.name||"participant").replace(/\s+/g,"_")}_${Date.now()}.xlsx`;
   XLSX.writeFile(wb, fname);
-  showStatus("XLSX exported (event-based phases).", "success");
+  showStatus("XLSX exported (skill-aware phases + projectile kinematics).", "success");
 }
 
-/* =========================================================
-   Event-based phase segmentation
-========================================================= */
-function segmentPhasesEventBased(rec) {
-  const n = rec.t.length;
-  const minN = 12;
-  if(n < minN) {
-    return {
-      events: { peakProjIdx: 0, peakProjSpeed: 0, peakAngVelIdx: 0, peakAngVel: 0 },
-      list: [
-        { name:"Preparation", i0:0, i1:n-1 },
-        { name:"Acceleration/Cocking", i0:0, i1:n-1 },
-        { name:"Release/Impact", i0:0, i1:n-1 },
-        { name:"FollowThrough", i0:0, i1:n-1 }
-      ]
-    };
+/* =========================
+   Summary helpers
+========================= */
+function driverSummary(label, driver, ph, phasesObj, skillOverall){
+  const i0=ph.i0, i1=ph.i1;
+  const tt=rec.t.slice(i0,i1+1);
+  const dur=tt.length?(tt[tt.length-1]-tt[0]):0;
+
+  const v = rec.driverLinVel_mps.slice(i0,i1+1);
+  const w = rec.driverAngVel_rads.slice(i0,i1+1);
+  const ang = rec.driverAngle_rad.slice(i0,i1+1);
+  const disp = rec.driverDisp_m.slice(i0,i1+1);
+
+  const rom = ang.length?(Math.max(...ang)-Math.min(...ang)):0;
+  const dispNet = disp.length?(disp[disp.length-1]-disp[0]):0;
+
+  const projSpeed = rec.projSpeed_mps.slice(i0,i1+1);
+  const projOk = rec.projValid.slice(i0,i1+1);
+  let peakProj=0;
+  for(let i=0;i<projSpeed.length;i++){
+    if((projOk[i]||0)===1) peakProj=Math.max(peakProj, Math.abs(projSpeed[i]||0));
   }
 
-  // Peak projectile speed (valid only)
-  let peakProjIdx = -1;
-  let peakProjSpeed = 0;
-  for(let i=0;i<n;i++){
-    if((rec.projValid[i]||0)===1){
-      const s = Math.abs(rec.projSpeed[i]||0);
-      if(s > peakProjSpeed){
-        peakProjSpeed = s;
-        peakProjIdx = i;
-      }
-    }
-  }
-
-  // Peak angular velocity (driver)
-  const peakAngVelIdx = argMaxAbs(rec.driverAngVel);
-  const peakAngVel = Math.abs(rec.driverAngVel[peakAngVelIdx]||0);
-
-  // If projectile not detected, fallback: use angular velocity peak as release surrogate
-  if(peakProjIdx < 0) peakProjIdx = peakAngVelIdx;
-
-  // Windows (in samples)
-  const wAng = Math.max(3, Math.floor(n * 0.10));
-  const wRel = Math.max(3, Math.floor(n * 0.08));
-  const buffer = Math.max(2, Math.floor(n * 0.03));
-
-  const ang0 = clampInt(peakAngVelIdx - wAng, 0, n-1);
-  const ang1 = clampInt(peakAngVelIdx + wAng, 0, n-1);
-
-  const rel0 = clampInt(peakProjIdx - wRel, 0, n-1);
-  const rel1 = clampInt(peakProjIdx + wRel, 0, n-1);
-
-  const prepEnd = clampInt(Math.min(peakAngVelIdx, peakProjIdx) - buffer, 0, n-1);
-
-  const phases = [
-    { name:"Preparation", i0:0, i1:prepEnd },
-    { name:"Acceleration/Cocking", i0:ang0, i1:ang1 },
-    { name:"Release/Impact", i0:rel0, i1:rel1 },
-    { name:"FollowThrough", i0:Math.min(n-1, rel1), i1:n-1 }
-  ];
-
-  // Ensure monotonic / valid ranges
-  phases.forEach(ph => {
-    if(ph.i1 < ph.i0){ const tmp=ph.i0; ph.i0=ph.i1; ph.i1=tmp; }
-    ph.i0 = clampInt(ph.i0, 0, n-1);
-    ph.i1 = clampInt(ph.i1, 0, n-1);
-  });
+  const ev = phasesObj.events||{};
+  const note = (label==="Overall")
+    ? `Skill inferred: ${skillOverall}. Events: peakProjSpeed=${round(ev.peakProjSpeed,3)}m/s@${ev.peakProjIdx}, peakω=${round(ev.peakAngVel,3)}rad/s@${ev.peakAngVelIdx}, release/contact@${ev.releaseIdx}`
+    : "";
 
   return {
-    events: {
-      peakProjIdx,
-      peakProjSpeed,
-      peakAngVelIdx,
-      peakAngVel
-    },
-    list: phases
+    phase: label,
+    driver_joint: driver,
+    duration_s: round(dur,3),
+    "peak_linVel[m/s]": round(maxAbs(v),6),
+    "avg_linVel[m/s]": round(mean(v),6),
+    "peak_angVel[rad/s]": round(maxAbs(w),6),
+    "avg_angVel[rad/s]": round(mean(w),6),
+    "ROM_angDisp[rad]": round(rom,6),
+    "avg_angle[rad]": round(mean(ang),6),
+    "displacement[m]": round(dispNet,6),
+    "peak_projectile_speed[m/s]": round(peakProj,6),
+    notes: note
   };
 }
 
-function rangeAll(phasesObj) {
-  const list = phasesObj.list;
-  return { i0: 0, i1: list.length ? list[list.length-1].i1 : 0 };
-}
+function metricSummary(def, label, ph){
+  const i0=ph.i0, i1=ph.i1;
+  const arr = rec.metrics[def.id] ? rec.metrics[def.id].slice(i0,i1+1) : [];
+  const tt  = rec.t.slice(i0,i1+1);
+  const dur = tt.length?(tt[tt.length-1]-tt[0]):0;
 
-/* =========================================================
-   Kinematics summary block (with event notes)
-========================================================= */
-function makeKinSummaryBlock(label, driver, ph, rec, events) {
-  const i0 = ph.i0, i1 = ph.i1;
-  const tt = slice(rec.t, i0, i1);
-  const v = slice(rec.driverLinVel, i0, i1);
-  const w = slice(rec.driverAngVel, i0, i1);
-  const ang = slice(rec.driverAngle, i0, i1);
-  const disp = slice(rec.driverDisp, i0, i1);
-  const projV = slice(rec.projSpeed, i0, i1);
-  const projOk = slice(rec.projValid, i0, i1);
-
-  const dur = tt.length ? (tt[tt.length-1] - tt[0]) : 0;
-
-  const peakV = maxAbs(v);
-  const avgV = mean(v);
-
-  const peakW = maxAbs(w);
-  const avgW = mean(w);
-
-  const rom = (ang.length ? (Math.max(...ang) - Math.min(...ang)) : 0);
-  const avgAng = mean(ang);
-
-  const dispNet = disp.length ? (disp[disp.length-1] - disp[0]) : 0;
-  const avgDispRate = dur > 0 ? dispNet / dur : 0;
-
-  let peakProj = 0;
-  for(let i=0;i<projV.length;i++){
-    if((projOk[i]||0)===1) peakProj = Math.max(peakProj, Math.abs(projV[i]||0));
+  let series = arr;
+  let unit = def.type==="linVel"?"m/s":(def.type==="angVel"?"rad/s":"rad");
+  if(def.type==="angle"){
+    series = arr.map(x => (x||0) * Math.PI/180);
   }
 
-  // Event annotation (only on Overall for readability)
-  const eventNote = (label === "Overall" && events)
-    ? `Events: peakProjSpeed=${round(events.peakProjSpeed,3)}m/s @ idx ${events.peakProjIdx}; peakAngVel=${round(events.peakAngVel,2)}deg/s @ idx ${events.peakAngVelIdx}`
-    : "";
+  const peak=maxAbs(series);
+  const avg=mean(series);
+  const rom = (def.type==="angle" && series.length) ? (Math.max(...series)-Math.min(...series)) : "";
 
-  return [{
+  return {
     phase: label,
-    driver_joint: driver,
-    duration_s: round(dur, 3),
-    peak_linVel_mps: round(peakV, 3),
-    avg_linVel_mps: round(avgV, 3),
-    peak_angVel_dps: round(peakW, 2),
-    avg_angVel_dps: round(avgW, 2),
-    peak_angDisplacement_deg: round(rom, 2),
-    avg_angle_deg: round(avgAng, 2),
-    displacement_m: round(dispNet, 3),
-    avg_dispRate_mps: round(avgDispRate, 3),
-    peak_projectile_speed_mps: round(peakProj, 3),
-    notes: eventNote
-  }];
+    driver_joint: "selected_metric",
+    duration_s: round(dur,3),
+    metric_name: `${def.type}_${def.joint}_${def.side}`,
+    metric_unit: `[${unit}]`,
+    metric_peak: round(peak,6),
+    metric_avg: round(avg,6),
+    metric_ROM_if_angle_rad: (def.type==="angle") ? round(rom,6) : ""
+  };
 }
 
-/* =========================================================
-   Technical model: push vs throw (event-based logic)
-   Uses relative timing:
-   - Throw-like: peak angular velocity occurs BEFORE peak projectile speed (rotation leads to release)
-   - Push-like: peak angular velocity occurs AT/AFTER projectile speed peak (late rotation / push-through)
-   Also uses dominance scores for robustness.
-========================================================= */
-function buildTechnicalModel(profile, driver, phasesObj, rec) {
-  const events = phasesObj.events;
-  const list = phasesObj.list;
+function projectileSummary(label, ph){
+  const i0=ph.i0, i1=ph.i1;
+  const ok = rec.projValid.slice(i0,i1+1);
+  const sp = rec.projSpeed_mps.slice(i0,i1+1);
+  const ang = rec.projAngle_deg.slice(i0,i1+1);
+  const acc = rec.projAccel_mps2.slice(i0,i1+1);
 
-  const all = rangeAll(phasesObj);
-  const vAll = slice(rec.driverLinVel, all.i0, all.i1);
-  const wAll = slice(rec.driverAngVel, all.i0, all.i1);
-  const angAll = slice(rec.driverAngle, all.i0, all.i1);
-  const dispAll = slice(rec.driverDisp, all.i0, all.i1);
-  const forceAll = slice(rec.forceFilt, all.i0, all.i1);
-  const momAll = slice(rec.momentFilt, all.i0, all.i1);
-
-  const peakV = maxAbs(vAll);
-  const peakW = maxAbs(wAll);
-  const rom = angAll.length ? (Math.max(...angAll)-Math.min(...angAll)) : 0;
-  const dispNet = dispAll.length ? (dispAll[dispAll.length-1]-dispAll[0]) : 0;
-  const peakF = maxAbs(forceAll);
-  const peakM = maxAbs(momAll);
-
-  // Timing rule
-  const timingLead = (events.peakAngVelIdx <= events.peakProjIdx - Math.max(1, Math.floor(rec.t.length*0.01)));
-
-  // Dominance score (backup)
-  const transScore = safeDiv(peakV, 1) + safeDiv(dispNet, 0.5) + safeDiv(peakF, 200);
-  const rotScore = safeDiv(peakW, 200) + safeDiv(rom, 60) + safeDiv(Math.abs(peakM), 10);
-
-  let pattern = "Throw-like (rotational dominant)";
-  let rationale = "";
-
-  if(!timingLead && transScore >= rotScore) {
-    pattern = "Push-like (translational/late-rotation dominant)";
-    rationale = "Peak angular velocity occurs at/after peak projectile speed AND translational metrics dominate—suggesting late push-through rather than early rotational sequencing.";
-  } else if(!timingLead && transScore < rotScore) {
-    pattern = "Mixed (strong rotation but timing late)";
-    rationale = "Rotational capacity is high, but peak angular velocity occurs at/after peak projectile speed—timing/sequence may be suboptimal (late whip).";
-  } else {
-    pattern = "Throw-like (rotation leads release)";
-    rationale = "Peak angular velocity occurs before peak projectile speed—consistent with proximal-to-distal sequencing and rotation leading to release/impact.";
+  let spVals=[], angVals=[], accVals=[];
+  for(let i=0;i<ok.length;i++){
+    if((ok[i]||0)===1){
+      spVals.push(Math.abs(sp[i]||0));
+      angVals.push(ang[i]||0);
+      accVals.push(Math.abs(acc[i]||0));
+    }
   }
 
-  const recos = [];
-  if(pattern.startsWith("Push-like")) {
-    recos.push("Biomechanics: Improve proximal-to-distal sequencing—build hip/torso rotation earlier, then transfer to distal segments before release.");
-    recos.push("Kinematics: Target peak angular velocity slightly BEFORE peak projectile speed (rotation leads). Reduce ‘late snap’ that peaks after release.");
-    recos.push("Kinetics: If Force–Time is spiky, train smoother acceleration/braking (eccentric control) to reduce unnecessary peak loads.");
-    recos.push("Training: rotational med-ball throws (hip-to-shoulder separation), cable chops/lifts, landmine rotations, decel drills (catch-and-stick, anti-rotation holds).");
-  } else if(pattern.startsWith("Mixed")) {
-    recos.push("Biomechanics: Rotation is present; focus on timing—avoid dumping rotation too late.");
-    recos.push("Kinematics: Cue earlier trunk rotation and stable base; aim for cleaner transfer to projectile speed around release.");
-    recos.push("Training: tempo throws (70–85% effort) for timing, then progress to full speed; add eccentric braking for shoulder/elbow/hip.");
-  } else {
-    recos.push("Biomechanics: Rotation leads release—maintain stability to prevent energy leak (trunk/pelvis control).");
-    recos.push("Kinematics: Verify peak angular velocity is not TOO early (premature rotation). Ideally: proximal ω peak → distal v peak → release.");
-    recos.push("Kinetics: If Moment–Time spikes sharply, add eccentric control to protect joints while preserving speed.");
-    recos.push("Training: plyometric med-ball variations + controlled decel reps, band-speed rotations, technique reps with lighter implements to refine timing.");
-  }
+  return {
+    phase: label,
+    projectile_samples: spVals.length,
+    "peak_speed[m/s]": round(maxAbs(spVals),6),
+    "avg_speed[m/s]": round(mean(spVals),6),
+    "avg_launch_angle[deg]": round(mean(angVals),3),
+    "peak_accel[m/s^2]": round(maxAbs(accVals),6),
+    "avg_accel[m/s^2]": round(mean(accVals),6)
+  };
+}
 
-  if(peakF > 600) recos.push("Flag: High peak Force proxy—check technique and consider reducing stiffness at peak load (more joint flexion, smoother braking).");
-  if(Math.abs(peakM) > 20) recos.push("Flag: High peak Moment proxy—prioritize trunk/hip stability + eccentric strength for rotation control.");
-  if(peakW > 700) recos.push("Flag: Very high peak angular velocity—validate keypoint confidence; motion blur can inflate angular velocity.");
+/* =========================
+   Technical model (skill-aware)
+========================= */
+function buildTechnicalModel(skillOverall, driver, phasesObj){
+  const ev=phasesObj.events||{};
+  const peakV = maxAbs(rec.driverLinVel_mps);
+  const peakW = maxAbs(rec.driverAngVel_rads);
+  const rom = rec.driverAngle_rad.length?(Math.max(...rec.driverAngle_rad)-Math.min(...rec.driverAngle_rad)):0;
+  const dispNet = rec.driverDisp_m.length?(rec.driverDisp_m[rec.driverDisp_m.length-1]-rec.driverDisp_m[0]):0;
+  const peakF = maxAbs(rec.forceFilt_N);
+  const peakM = maxAbs(rec.momentFilt_Nm);
 
-  const rows = [];
-  rows.push({ section:"Event markers", item:"Peak projectile speed (m/s)", value: round(events.peakProjSpeed,3) });
-  rows.push({ section:"Event markers", item:"Peak projectile idx", value: events.peakProjIdx });
-  rows.push({ section:"Event markers", item:"Peak angular velocity (deg/s)", value: round(events.peakAngVel,2) });
-  rows.push({ section:"Event markers", item:"Peak angular velocity idx", value: events.peakAngVelIdx });
+  const peakProj = (ev.peakProjSpeed!=null)?ev.peakProjSpeed:maxAbsWhere(rec.projSpeed_mps, rec.projValid);
+  const avgProjAng = mean(rec.projAngle_deg.filter((_,i)=>rec.projValid[i]===1));
 
-  rows.push({ section:"Pattern classification", item:"Pattern", value: pattern });
-  rows.push({ section:"Pattern classification", item:"Rationale", value: rationale });
+  const rows=[];
+  rows.push({ section:"Skill inference", item:"Skill (CV heuristic)", value: skillOverall });
+  rows.push({ section:"Event markers", item:"Peak projectile speed [m/s]", value: round(peakProj,6) });
+  rows.push({ section:"Event markers", item:"Peak driver ω [rad/s]", value: round(ev.peakAngVel||peakW,6) });
+  rows.push({ section:"Event markers", item:"Release/contact index", value: ev.releaseIdx ?? "" });
+  rows.push({ section:"Projectile", item:"Average launch angle [deg]", value: round(avgProjAng||0,3) });
 
-  rows.push({ section:"Key values (overall)", item:"Peak linear velocity (m/s)", value: round(peakV,3) });
-  rows.push({ section:"Key values (overall)", item:"Peak angular velocity (deg/s)", value: round(peakW,2) });
-  rows.push({ section:"Key values (overall)", item:"Peak angular displacement ROM (deg)", value: round(rom,2) });
-  rows.push({ section:"Key values (overall)", item:"Displacement (m)", value: round(dispNet,3) });
-  rows.push({ section:"Key values (overall)", item:"Peak Force–Time (N, filtered)", value: round(peakF,0) });
-  rows.push({ section:"Key values (overall)", item:"Peak Moment–Time (Nm, filtered)", value: round(peakM,3) });
+  rows.push({ section:"Kinematics", item:"Driver joint", value: driver });
+  rows.push({ section:"Kinematics", item:"Peak v [m/s]", value: round(peakV,6) });
+  rows.push({ section:"Kinematics", item:"Peak ω [rad/s]", value: round(peakW,6) });
+  rows.push({ section:"Kinematics", item:"ROM [rad]", value: round(rom,6) });
+  rows.push({ section:"Kinematics", item:"Displacement [m]", value: round(dispNet,6) });
 
-  list.forEach(ph => {
-    const blk = makeKinSummaryBlock(ph.name, driver, ph, rec, events)[0];
-    rows.push({ section:"Phase summary", item:`${ph.name} duration (s)`, value: blk.duration_s });
-    rows.push({ section:"Phase summary", item:`${ph.name} peak linVel (m/s)`, value: blk.peak_linVel_mps });
-    rows.push({ section:"Phase summary", item:`${ph.name} peak angVel (deg/s)`, value: blk.peak_angVel_dps });
-    rows.push({ section:"Phase summary", item:`${ph.name} ROM (deg)`, value: blk.peak_angDisplacement_deg });
-    rows.push({ section:"Phase summary", item:`${ph.name} peak projectile speed (m/s)`, value: blk.peak_projectile_speed_mps });
-  });
+  rows.push({ section:"Kinetics", item:"Peak Force (filtered) [N]", value: round(peakF,3) });
+  rows.push({ section:"Kinetics", item:"Peak Moment (filtered) [Nm]", value: round(peakM,6) });
 
-  recos.forEach((t, i) => rows.push({ section:"Recommendations", item:`R${i+1}`, value: t }));
+  const recos = buildRecommendations(skillOverall, {peakV, peakW, rom, dispNet, peakF, peakM, peakProj, avgProjAng, ev});
+  recos.forEach((t,i)=>rows.push({ section:"Recommendations", item:`R${i+1}`, value:t }));
 
-  rows.push({ section:"Notes", item:"Method", value:"Event-based phases anchored on peak angular velocity and peak projectile speed windows. Kinetics are simplified proxies; interpret trends and relative changes." });
+  rows.push({ section:"Notes", item:"Method", value:"Skill inference uses projectile + closest effector (ankle/wrist) + ω magnitude. Use as guidance, not diagnosis." });
   return rows;
 }
 
-/* =========================================================
-   Live interpretation
-========================================================= */
-function buildLiveInterpretation(kin, kinets) {
-  if(!kin) return "—";
-  const parts = [];
-  parts.push(`Driver: ${kin.driver}`);
-  parts.push(`v: ${kin.v_mps.toFixed(2)} m/s | ω: ${kin.angVel_dps.toFixed(0)} °/s | θ: ${kin.angle_deg.toFixed(1)}° | disp: ${kin.disp_m.toFixed(2)} m`);
-  if(kinets) parts.push(`Force: ${kinets.forceFilt_N.toFixed(0)} N | Moment: ${kinets.momentFilt_Nm.toFixed(2)} Nm`);
-  if(kin.projValid) parts.push(`Projectile speed: ${kin.projSpeed_mps.toFixed(2)} m/s`);
-  return parts.join("\n");
+function buildRecommendations(skill, x){
+  const out=[];
+  const {peakW, peakProj, avgProjAng, peakM, peakF} = x;
+
+  if(skill.includes("Kick")){
+    out.push("Kick: prioritize proximal-to-distal sequencing (hip → knee → ankle). If peak ω is low, work on swing speed + stiffness at contact.");
+    out.push("Projectile: if launch angle is inconsistent, adjust foot contact point and approach angle; aim repeatable launch angle for your target (low drive vs loft).");
+    out.push("Training: banded hip flexor swings, A-skips → fast leg cycles, resisted instep strikes, and decel (hamstring eccentrics) to control follow-through.");
+  } else if(skill.includes("Overhand throw") || skill.includes("pitch")){
+    out.push("Throw: aim for earlier trunk rotation and a clean hand-path; peak ω should typically occur just before peak projectile speed (release).");
+    out.push("If Moment spikes (high Nm), add eccentric decel + scapular stability work; keep shoulder/elbow loads controlled.");
+    out.push("Training: med-ball rotational throws, step-behind throws, cuff/scap circuits, decel drills (catch-and-stick), progressive intent throwing.");
+  } else if(skill.includes("Two-hand")){
+    out.push("Two-hand release: improve timing of knee/hip extension with arm extension; avoid late arm-only push.");
+    out.push("Projectile: if angle too high/low, cue 'finish to target' and adjust release height; monitor peak speed vs consistency.");
+    out.push("Training: jump-to-reach sequencing drills, tempo reps (70–85%), then intent reps; core anti-extension/anti-rotation for stability.");
+  } else if(skill.includes("Strike") || skill.includes("swing")){
+    out.push("Strike/swing: build rotational speed but keep contact timing consistent—peak hand speed should align close to contact/release.");
+    out.push("Projectile: if speed is high but angle is off, adjust bat/racket path and contact point; focus on repeatable launch angle windows.");
+    out.push("Training: rotational med-ball slams, cable rotations, overloaded/underloaded swings, and braking strength (obliques/hips) to reduce late collapse.");
+  } else {
+    out.push("Unknown skill: keep the approach event-based—use peak projectile speed and peak ω to check sequencing.");
+    out.push("If peak Force/Moment are noisy, increase lighting, stabilize camera, and ensure projectile is large in frame. Consider using higher FPS uploads.");
+  }
+
+  // Generic safety cues
+  if(peakM > 3) out.push("High Moment trend: add eccentric control + reduce late snap; progress volume gradually.");
+  if(peakF > 300) out.push("High Force trend: check technique and braking; consider softer contact strategy and strength for deceleration.");
+  if(peakProj > 0 && (avgProjAng > 80 || avgProjAng < -20)) out.push("Projectile angle extreme: likely tracking/plane issue—reposition camera perpendicular to motion plane and keep projectile visible.");
+
+  return out.slice(0,8);
 }
 
-/* =========================================================
-   UI: metric selection
-========================================================= */
-function addMetric() {
-  const type = document.getElementById('metricType').value;
-  const joint = document.getElementById('metricJoint').value;
-  const side = document.getElementById('metricSide').value;
-  const id = `${type}_${joint}_${side}`;
-  if(!selectedMetrics.find(m => m.id === id)) {
-    selectedMetrics.push({id, type, joint, side});
+/* =========================
+   Charts
+========================= */
+function pushChart(key, t, v){
+  const win=parseInt(document.getElementById('windowSeconds').value);
+  chartSeries[key].push({t, v});
+  while(chartSeries[key].length && chartSeries[key][0].t < t-win) chartSeries[key].shift();
+}
+function throttleChartDraw(t){
+  if(t-lastChartDraw < 0.1) return;
+  lastChartDraw = t;
+  drawDualAxisChart('chartDual');
+}
+function drawDualAxisChart(id){
+  const c=document.getElementById(id);
+  const g=c.getContext('2d');
+  const w=c.width=c.clientWidth;
+  const h=c.height=c.clientHeight;
+  g.clearRect(0,0,w,h);
+
+  g.strokeStyle="#eee";
+  g.beginPath(); g.moveTo(0,h/2); g.lineTo(w,h/2); g.stroke();
+
+  const fData = chartSeries.force;
+  const mData = chartSeries.moment;
+  if(!fData.length || !mData.length) return;
+
+  const win=parseInt(document.getElementById('windowSeconds').value);
+  const now = Math.max(fData[fData.length-1].t, mData[mData.length-1].t);
+
+  let fMax=1, mMax=1;
+  fData.forEach(d=>{ fMax=Math.max(fMax, Math.abs(d.v)); });
+  mData.forEach(d=>{ mMax=Math.max(mMax, Math.abs(d.v)); });
+
+  g.strokeStyle="#667eea"; g.lineWidth=2; g.beginPath();
+  fData.forEach((pt,i)=>{
+    const x=((win-(now-pt.t))/win)*w;
+    const y=h-((pt.v/(fMax*1.2))*(h/2)+h/2);
+    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+  });
+  g.stroke();
+
+  g.strokeStyle="#ef4444"; g.lineWidth=2; g.beginPath();
+  mData.forEach((pt,i)=>{
+    const x=((win-(now-pt.t))/win)*w;
+    const y=h-((pt.v/(mMax*1.2))*(h/2)+h/2);
+    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+  });
+  g.stroke();
+
+  g.fillStyle="#666";
+  g.font="12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+  g.fillText("Force [N] (left)", 10, 14);
+  const txt="Moment [Nm] (right)";
+  const tw=g.measureText(txt).width;
+  g.fillText(txt, w - tw - 10, 14);
+}
+
+/* =========================
+   UI metric selection
+========================= */
+function addMetric(){
+  const type=document.getElementById('metricType').value;
+  const joint=document.getElementById('metricJoint').value;
+  const side=document.getElementById('metricSide').value;
+  const id=`${type}_${joint}_${side}`;
+  if(!selectedMetrics.find(m=>m.id===id)){
+    selectedMetrics.push({id,type,joint,side});
     renderMetricChips();
   }
 }
-function removeMetric(id) { selectedMetrics = selectedMetrics.filter(m => m.id !== id); renderMetricChips(); }
-function clearMetrics() { selectedMetrics = []; renderMetricChips(); }
+function removeMetric(id){ selectedMetrics=selectedMetrics.filter(m=>m.id!==id); renderMetricChips(); }
+function clearMetrics(){ selectedMetrics=[]; renderMetricChips(); }
 
-function renderMetricChips() {
-  const chips = document.getElementById('metricChips');
-  const panel = document.getElementById('selectedMetricsPanel');
-  chips.innerHTML = "";
-  panel.innerHTML = "";
-  selectedMetrics.forEach(m => {
-    const label = `${m.type} ${m.joint} ${m.side}`;
-    const chip = document.createElement('div');
-    chip.className = "chip";
-    chip.innerHTML = `${label} <button onclick="removeMetric('${m.id}')">✕</button>`;
+function renderMetricChips(){
+  const chips=document.getElementById('metricChips');
+  const panel=document.getElementById('selectedMetricsPanel');
+  chips.innerHTML=""; panel.innerHTML="";
+  selectedMetrics.forEach(m=>{
+    const label = (m.type==="angVel") ? `${m.type} ${m.joint} ${m.side} [rad/s]`
+                 : (m.type==="linVel") ? `${m.type} ${m.joint} ${m.side} [m/s]`
+                 : `${m.type} ${m.joint} ${m.side} [deg]`;
+
+    const chip=document.createElement('div');
+    chip.className="chip";
+    chip.innerHTML=`${label} <button onclick="removeMetric('${m.id}')">✕</button>`;
     chips.appendChild(chip);
 
-    const card = document.createElement('div');
-    card.className = "metric";
-    card.innerHTML = `
+    const card=document.createElement('div');
+    card.className="metric";
+    card.innerHTML=`
       <div class="t">${label}</div>
       <div class="v" id="val_${m.id}">--</div>
       <div class="s">${metricHint(m)}</div>
@@ -1602,46 +1723,82 @@ function renderMetricChips() {
     panel.appendChild(card);
   });
 }
-function metricHint(m) {
-  if(m.type === "linVel") return "Linear velocity (m/s) of the joint point in 2D.";
-  if(m.type === "angVel") return "Angular velocity (°/s) from change in joint angle frame-to-frame.";
-  if(m.type === "angle") return (m.joint === "wrist" || m.joint === "ankle")
-    ? "Proxy angle in 2D (limited without hand/foot keypoints). Trend only."
-    : "Joint angle (°) in 2D.";
+function metricHint(m){
+  if(m.type==="linVel") return "Linear velocity [m/s] from 2D displacement / dt.";
+  if(m.type==="angVel") return "Angular velocity [rad/s] from Δθ(rad)/dt.";
+  if(m.type==="angle") return "Angle shown in [deg] live; exported as [rad] in XLSX.";
+  return "";
+}
+function metricUnits(type){
+  if(type==="linVel") return "m/s";
+  if(type==="angVel") return "rad/s";
+  if(type==="angle") return "deg";
   return "";
 }
 
-/* =========================================================
-   Collapsible + PiP + Status
-========================================================= */
-function toggleCollapse(id) {
-  const el = document.getElementById(id);
+/* =========================
+   Collapsible + PiP + status
+========================= */
+function toggleCollapse(id){
+  const el=document.getElementById(id);
   el.classList.toggle('collapsed');
   document.getElementById(id+'_lbl').innerText = el.classList.contains('collapsed') ? "Expand" : "Collapse";
 }
-function togglePiP() { document.body.classList.toggle('pip-on'); }
+function togglePiP(){ document.body.classList.toggle('pip-on'); }
 
-function showStatus(msg, type) {
-  const el = document.getElementById('statusMessage');
-  el.innerText = msg;
-  el.className = `status-message status-${type}`;
-  el.style.display = 'block';
-  setTimeout(() => el.style.display='none', 3000);
+function showStatus(msg,type){
+  const el=document.getElementById('statusMessage');
+  el.innerText=msg;
+  el.className=`status-message status-${type}`;
+  el.style.display='block';
+  setTimeout(()=>el.style.display='none', 3000);
 }
-function setStatusText(t) { document.getElementById('statusText').innerText = t; }
-function setSourceText(t) { document.getElementById('sourceText').innerText = t; }
+function setStatusText(t){ document.getElementById('statusText').innerText=t; }
+function setSourceText(t){ document.getElementById('sourceText').innerText=t; }
 
-/* =========================================================
-   Utility
-========================================================= */
-function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
-function clampInt(x, a, b){ return Math.max(a, Math.min(b, Math.round(x))); }
-function round(x, dp){ if(!isFinite(x)) return 0; const p = Math.pow(10,dp); return Math.round(x*p)/p; }
-function slice(arr, i0, i1){ return arr.slice(i0, i1+1); }
-function mean(arr){ if(!arr.length) return 0; return arr.reduce((s,x)=>s+(+x||0),0)/arr.length; }
-function maxAbs(arr){ if(!arr.length) return 0; let m=0; arr.forEach(x=>{ const a=Math.abs(+x||0); if(a>m) m=a; }); return m; }
-function argMaxAbs(arr){ let best=0, bestV=-1; for(let i=0;i<arr.length;i++){ const a=Math.abs(+arr[i]||0); if(a>bestV){ bestV=a; best=i; } } return best; }
-function safeDiv(x, d){ return (d===0)?0:(x/d); }
+/* =========================
+   Utils
+========================= */
+function clamp(x,a,b){ return Math.max(a, Math.min(b,x)); }
+function clampInt(x,a,b){ return Math.max(a, Math.min(b, Math.round(x))); }
+function round(x,dp){ if(!isFinite(x)) return 0; const p=Math.pow(10,dp); return Math.round(x*p)/p; }
+function mean(arr){ if(!arr || !arr.length) return 0; return arr.reduce((s,x)=>s+(+x||0),0)/arr.length; }
+function maxAbs(arr){ if(!arr || !arr.length) return 0; let m=0; arr.forEach(x=>{ const a=Math.abs(+x||0); if(a>m) m=a; }); return m; }
+function argMaxAbs(arr){
+  let best=0, bestV=-1;
+  for(let i=0;i<(arr||[]).length;i++){
+    const a=Math.abs(+arr[i]||0);
+    if(a>bestV){ bestV=a; best=i; }
+  }
+  return best;
+}
+function argMaxAbsWhere(arr, mask){
+  let best=-1, bestV=-1;
+  for(let i=0;i<(arr||[]).length;i++){
+    if((mask[i]||0)!==1) continue;
+    const a=Math.abs(+arr[i]||0);
+    if(a>bestV){ bestV=a; best=i; }
+  }
+  return best;
+}
+function maxAbsWhere(arr, mask){
+  let m=0;
+  for(let i=0;i<(arr||[]).length;i++){
+    if((mask[i]||0)!==1) continue;
+    m=Math.max(m, Math.abs(arr[i]||0));
+  }
+  return m;
+}
+function mode(arr){
+  const f=new Map();
+  (arr||[]).forEach(x=>{
+    const k=(x||"").toString();
+    f.set(k,(f.get(k)||0)+1);
+  });
+  let best=""; let bestC=-1;
+  f.forEach((c,k)=>{ if(c>bestC){ bestC=c; best=k; } });
+  return best || "Unknown";
+}
 </script>
 </body>
 </html>
