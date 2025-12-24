@@ -242,7 +242,7 @@
 <body>
 <div class="container">
   <h1>🏃‍♂️ Movement Kinetics Lab</h1>
-  <p class="subtitle">Plane selector • fixed ω capture • discrete sample series (fps-based) • per-phase avg+peak summaries</p>
+  <p class="subtitle">Kalman-filtered kinematics • low-pass filtered kinetics • phase-based summary + recommendations (XLSX)</p>
 
   <div id="statusMessage" class="status-message"></div>
 
@@ -303,11 +303,7 @@
             <select id="cameraFacing"><option value="environment">Back</option><option value="user">Front</option></select>
           </div>
           <div>
-            <label>Chart Window (s)</label>
-            <select id="windowSeconds"><option value="5">5s</option><option value="10" selected>10s</option><option value="20">20s</option></select>
-          </div>
-          <div>
-            <label>Low-pass cutoff (Hz)</label>
+            <label>Kinetics low-pass cutoff (Hz)</label>
             <select id="cutoffHz">
               <option value="2">2</option>
               <option value="3">3</option>
@@ -387,7 +383,7 @@
           </div>
         </div>
         <p class="mini">
-          ω always in <b>[rad/s]</b>. For wrist/ankle, ω is computed from segment orientation (elbow→wrist, knee→ankle), not a 3-point joint angle.
+          Kinematics are Kalman-filtered. ω in <b>[rad/s]</b>, angles exported in <b>[rad]</b>. Kinetics are low-pass filtered for visual clarity.
         </p>
       </div>
 
@@ -403,7 +399,7 @@
             <div>
               <label>Metric</label>
               <select id="metricType">
-                <option value="angle">Angle [deg]</option>
+                <option value="angle">Angle [rad] (export)</option>
                 <option value="angVel">Ang. Vel [rad/s]</option>
                 <option value="linVel">Lin. Vel [m/s]</option>
               </select>
@@ -423,33 +419,24 @@
               <label>Side</label>
               <select id="metricSide"><option value="R">Right</option><option value="L">Left</option></select>
             </div>
-            <div>
-              <label>Chart Metric</label>
-              <select id="chartMetricSelect">
-                <option value="driver_angVel" selected>Driver ω [rad/s]</option>
-                <option value="driver_linVel">Driver v [m/s]</option>
-                <option value="driver_angle">Driver θ [rad]</option>
-                <option value="driver_disp">Driver disp [m]</option>
-                <option value="proj_speed">Projectile speed [m/s]</option>
-                <option value="selected_metric">Selected metric (first)</option>
-              </select>
-            </div>
           </div>
           <button class="btn btn-primary" onclick="addMetric()">Add</button>
           <button class="btn btn-danger" onclick="clearMetrics()">Clear</button>
           <div class="chiplist" id="metricChips"></div>
+
           <div class="divider"></div>
           <div class="metrics-grid" id="selectedMetricsPanel"></div>
+
           <div class="divider"></div>
           <div class="metric">
-            <div class="t">Live interpretation (plane-aware)</div>
+            <div class="t">Live overview (filtered)</div>
             <div class="s" id="liveInterpretation">—</div>
           </div>
         </div>
       </div>
 
       <div class="card" style="margin-top:12px;">
-        <h3>Charts (Discrete sample series)</h3>
+        <h3>Charts</h3>
         <div class="charts-grid">
           <div class="chart-card">
             <div class="chart-title">
@@ -458,18 +445,14 @@
             </div>
             <canvas id="chartDual" class="chart"></canvas>
           </div>
-          <div class="chart-card">
-            <div class="chart-title">
-              <b>Kinematics: selected series vs time</b>
-              <span id="lblKinematics">—</span>
-            </div>
-            <canvas id="chartKinematics" class="chart"></canvas>
-          </div>
         </div>
+        <p class="mini">
+          This chart shows the whole session window (rolling) and is low-pass filtered (cascaded) for smoothness.
+        </p>
       </div>
 
       <div class="card" style="margin-top:12px;">
-        <button class="btn btn-primary" onclick="downloadData()">📊 Download XLSX (Profile • Phase avg/peak per selected metric)</button>
+        <button class="btn btn-primary" onclick="downloadData()">📊 Download XLSX (Profile • Phase Summary + Recommendations • TimeSeries)</button>
       </div>
     </div>
 
@@ -486,7 +469,7 @@
           </div>
         </div>
         <p class="mini">
-          Tip: for ω stability, keep the joint in frame, avoid motion blur, and use higher FPS uploads.
+          For stable kinematics: keep joints visible, avoid motion blur, use higher FPS and good lighting.
         </p>
       </div>
     </div>
@@ -513,7 +496,6 @@ let detectedFPS=0, framesInSecond=0;
 let lastFPSUpdate=performance.now();
 
 let selectedMetrics=[];
-
 let lastProjectiles=[];
 let prevProjState=null;
 
@@ -521,14 +503,11 @@ const FILTER_ORDER = 4;
 let forceStages = new Array(FILTER_ORDER).fill(0);
 let momentStages = new Array(FILTER_ORDER).fill(0);
 
-// discrete series for charts
-const series = {
-  t: [], // seconds based on fpsUsed
-  force: [], moment: [],
-  driver_linVel: [], driver_angVel: [], driver_angle: [], driver_disp: [],
-  proj_speed: [],
-  // first selected metric convenience:
-  selected_metric: []
+// rolling chart buffers (keep last N seconds)
+const rolling = {
+  t: [],
+  force: [],
+  moment: []
 };
 
 let chartLastDraw=0;
@@ -539,10 +518,35 @@ const KP = {
 };
 
 const SEG_MASS = { thigh:0.10, shank:0.0465, foot:0.0145, upperArm:0.028, forearm:0.016, hand:0.006, trunk:0.50 };
-const SEG_K = { thigh:0.323, shank:0.302, foot:0.475, upperArm:0.322, forearm:0.303, hand:0.628 };
+const SEG_K    = { thigh:0.323, shank:0.302, foot:0.475, upperArm:0.322, forearm:0.303, hand:0.628 };
 
+// per-signal Kalman filter cache
+const kf = new Map(); // key -> {x, P, Q, R, inited}
+
+/* =========================
+   Recording store
+========================= */
 let rec = resetRec();
 let sessionMeta = {};
+
+function resetRec(){
+  return {
+    fpsUsed: 60,
+    n: 0,
+    driver: "",
+    plane: "sagittal",
+    t: [],
+    forceN: [],
+    momentNm: [],
+    driver_linVel: [],
+    driver_angVel: [],
+    driver_angle: [],
+    driver_disp: [],
+    proj_speed: [],
+    metricsDefs: [],
+    metrics: {} // id -> array
+  };
+}
 
 /* =========================
    Init
@@ -732,36 +736,43 @@ function resetSessionState(){
   forceStages=new Array(FILTER_ORDER).fill(0);
   momentStages=new Array(FILTER_ORDER).fill(0);
 
-  resetSeries();
+  kf.clear();
+
+  rolling.t=[]; rolling.force=[]; rolling.moment=[];
 
   document.getElementById('lblKinetics').innerText="F: 0 N | M: 0 Nm";
-  document.getElementById('lblKinematics').innerText="—";
   document.getElementById('liveInterpretation').innerText="—";
 }
 
 /* =========================
-   Recording store
+   Kalman filter (1D)
+   - simple random-walk model x_k = x_{k-1} + w
 ========================= */
-function resetRec(){
-  return {
-    fpsUsed: 60,
-    n: 0,
-    driver: "",
-    plane: "sagittal",
-    t: [],
-    forceN: [],
-    momentNm: [],
-    driver_linVel: [],
-    driver_angVel: [],
-    driver_angle: [],
-    driver_disp: [],
-    proj_speed: [],
-    metricsDefs: [],
-    metrics: {}, // id -> array
-  };
+function kalman1D(key, z, Q, R){
+  if(!isFinite(z)) return 0;
+  let s = kf.get(key);
+  if(!s){
+    s = { x: z, P: 1, Q: Q, R: R, inited: true };
+    kf.set(key, s);
+    return s.x;
+  }
+  // predict
+  s.P = s.P + s.Q;
+  // update
+  const K = s.P / (s.P + s.R);
+  s.x = s.x + K * (z - s.x);
+  s.P = (1 - K) * s.P;
+  return s.x;
 }
-function resetSeries(){
-  Object.keys(series).forEach(k => series[k] = []);
+function kalmanParamsFor(type){
+  // tuned defaults (light smoothing but stable for iPhone video)
+  // Increase R for noisier signals, increase Q to follow rapid motion more.
+  if(type==="angle")  return {Q: 1e-3, R: 5e-3};      // rad
+  if(type==="angVel") return {Q: 5e-2, R: 2e-1};      // rad/s
+  if(type==="linVel") return {Q: 2e-2, R: 1e-1};      // m/s
+  if(type==="proj")   return {Q: 3e-2, R: 1.5e-1};    // m/s
+  if(type==="force")  return {Q: 20,   R: 200};       // N (not used; kinetics uses low-pass)
+  return {Q: 1e-3, R: 1e-2};
 }
 
 /* =========================
@@ -811,14 +822,13 @@ async function renderLoop(){
     const plane=document.getElementById('motionPlane').value;
 
     const proj = computeProjectileSpeed(lastProjectiles);
-    const kin = computeDriverKinematics(kp, plane);
+    const kin  = computeDriverKinematics(kp, plane);
     const kinets = computeDriverKinetics(kin);
 
     processSelectedMetrics(kp, plane);
 
-    // live display
     document.getElementById('lblKinetics').innerText =
-      `F: ${(kinets.forceN||0).toFixed(0)} N | M: ${(kinets.momentNm||0).toFixed(4)} Nm`;
+      `F: ${(kinets.forceN||0).toFixed(0)} N | M: ${(kinets.momentNm||0).toFixed(6)} Nm`;
 
     const liveText = [
       `Plane: ${plane}`,
@@ -828,8 +838,7 @@ async function renderLoop(){
     ].join("\n");
     document.getElementById('liveInterpretation').innerText = liveText;
 
-    // update discrete series continuously (even when not recording) so charts are readable
-    pushSeriesContinuous(kin, kinets, proj);
+    pushRollingKinetics(kinets, kin.fpsUsed);
 
     if(isRecording){
       recordSample(kin, kinets, proj, plane);
@@ -891,7 +900,7 @@ function drawProjectile(projs){
 }
 
 /* =========================
-   Scale / helpers
+   Helpers
 ========================= */
 function getPxToMeter(){
   const hM=currentParticipant?(currentParticipant.height/100):1.75;
@@ -919,16 +928,19 @@ function idxOf(joint, side){
   const k = `${joint}_${side}`;
   return KP[k] ?? null;
 }
+function unwrapAngleRad(curr, prev){
+  let d = curr - prev;
+  if(d > Math.PI) curr -= 2*Math.PI;
+  if(d < -Math.PI) curr += 2*Math.PI;
+  return curr;
+}
 
 /* =========================
-   ANGLE + ω (fixed)
-   - For shoulder/elbow/hip/knee: 3pt joint angle
-   - For wrist/ankle: segment orientation angle (2pt), then ω from Δorientation
+   Angles / ω (with Kalman)
 ========================= */
-const angleState = new Map(); // key -> {prevRad, velStage[]}
+const angleState = new Map(); // key -> {prevRad, prevFiltRad}
 
 function getJointAngleRad(kp, joint, side){
-  // returns internal angle in radians for supported joints
   const minScore=0.30;
   let a=null,b=null,c=null;
 
@@ -948,11 +960,10 @@ function getJointAngleRad(kp, joint, side){
 
   let ang = Math.abs(rad);
   if(ang > Math.PI) ang = 2*Math.PI - ang;
-  return ang; // [0, pi]
+  return ang;
 }
 
 function getSegmentOrientationRad(kp, seg, side){
-  // seg: "forearm" (elbow->wrist) OR "shank" (knee->ankle)
   const minScore=0.30;
   let a=null,b=null;
   if(seg==="forearm"){ a=idxOf("elbow",side); b=idxOf("wrist",side); }
@@ -963,39 +974,36 @@ function getSegmentOrientationRad(kp, seg, side){
   if(!pA||!pB) return NaN;
   if(pA.score<minScore||pB.score<minScore) return NaN;
 
-  // orientation in image plane
   return Math.atan2(pB.y - pA.y, pB.x - pA.x); // [-pi, pi]
 }
 
-function unwrapAngleRad(curr, prev){
-  // unwrap to avoid jumps near pi boundary
-  let d = curr - prev;
-  if(d > Math.PI) curr -= 2*Math.PI;
-  if(d < -Math.PI) curr += 2*Math.PI;
-  return curr;
-}
+function getFilteredAngleAndOmega(key, rawRad, dt){
+  if(!isFinite(rawRad) || dt<=0) return {angleFilt:0, omegaFilt:0};
 
-function getAngularVelocityRadS(key, currRad, dt){
-  if(!isFinite(currRad) || dt<=0) return 0;
+  const st = angleState.get(key) || {prevRad: rawRad, prevFiltRad: rawRad};
 
-  const hz=parseFloat(document.getElementById("cutoffHz").value);
-  const st = angleState.get(key) || { prevRad: currRad, velStages: new Array(2).fill(0) };
+  // unwrap raw against previous raw
+  const rawUnwrapped = unwrapAngleRad(rawRad, st.prevRad);
 
-  // unwrap for orientation angles (segment)
-  let radNow = currRad;
-  if(st.prevRad != null) radNow = unwrapAngleRad(currRad, st.prevRad);
+  // Kalman filter angle (rad)
+  const {Q:Qa, R:Ra} = kalmanParamsFor("angle");
+  const angleFilt = kalman1D(`kal_angle_${key}`, rawUnwrapped, Qa, Ra);
 
-  const wRaw = (radNow - st.prevRad) / Math.max(1e-4, dt);
+  // omega from filtered angle
+  const omegaRaw = (angleFilt - st.prevFiltRad) / Math.max(1e-4, dt);
 
-  // extra smoothing for ω
-  const wFilt = cascadedLowPass(wRaw, st.velStages, dt, Math.max(2, hz));
+  // Kalman filter omega (rad/s)
+  const {Q:Qw, R:Rw} = kalmanParamsFor("angVel");
+  const omegaFilt = kalman1D(`kal_omega_${key}`, omegaRaw, Qw, Rw);
 
-  st.prevRad = radNow;
+  st.prevRad = rawUnwrapped;
+  st.prevFiltRad = angleFilt;
   angleState.set(key, st);
-  return wFilt;
+
+  return {angleFilt, omegaFilt};
 }
 
-function getLinearVelMps(kp, joint, side){
+function getLinearVelMpsRaw(kp, joint, side, dt){
   if(!prevKeypoints) return 0;
   const idx=idxOf(joint, side);
   if(idx==null) return 0;
@@ -1004,17 +1012,14 @@ function getLinearVelMps(kp, joint, side){
   const s=getPxToMeter();
   const dx=(curr.x-prev.x)*s;
   const dy=(curr.y-prev.y)*s;
-  // dt for non-recording charts uses fpsUsed; for live, approximate from detectedFPS
-  const fps = Math.max(1, detectedFPS || parseInt(document.getElementById("fpsSelection").value) || 60);
-  const dt=1/fps;
-  return Math.hypot(dx,dy)/dt;
+  return Math.hypot(dx,dy)/Math.max(1e-4, dt);
 }
 
 /* =========================
-   Projectile speed (simple)
+   Projectile speed (Kalman)
 ========================= */
 function computeProjectileSpeed(projs){
-  const out={speed:0};
+  const out={speed:0, speedRaw:0};
   if(!projs||!projs.length){ prevProjState=null; return out; }
 
   const [x,y,w,h]=projs[0].bbox;
@@ -1025,17 +1030,22 @@ function computeProjectileSpeed(projs){
   const fps = Math.max(1, detectedFPS || parseInt(document.getElementById("fpsSelection").value) || 60);
   const dt=1/fps;
 
+  let sp=0;
   if(prevProjState){
     const vx=(xM-prevProjState.x)/dt;
     const vy=(yM-prevProjState.y)/dt;
-    out.speed=Math.hypot(vx,vy);
+    sp=Math.hypot(vx,vy);
   }
   prevProjState={x:xM,y:yM};
+  out.speedRaw=sp;
+
+  const {Q,R} = kalmanParamsFor("proj");
+  out.speed = kalman1D("kal_proj_speed", sp, Q, R);
   return out;
 }
 
 /* =========================
-   Driver kinematics
+   Driver kinematics (Kalman)
 ========================= */
 let driverDisp=0;
 let prevDriverXY=null;
@@ -1047,46 +1057,47 @@ function computeDriverKinematics(kp, plane){
   const fpsUsed = Math.max(1, detectedFPS || parseInt(document.getElementById("fpsSelection").value) || 60);
   const dt = 1/fpsUsed;
 
-  // angleRad:
-  let angleRad=0;
-  let angVel=0;
+  let angleRadRaw=0;
+  let angleKey=`driver_${jName}_${side}`;
 
   if(jName==="wrist"){
-    // segment orientation ω from forearm
     const ori = getSegmentOrientationRad(kp, "forearm", side);
-    angleRad = isFinite(ori) ? ori : 0;
-    angVel = getAngularVelocityRadS(`driver_seg_forearm_${side}`, angleRad, dt);
+    angleRadRaw = isFinite(ori) ? ori : 0;
+    angleKey=`driver_seg_forearm_${side}`;
   } else if(jName==="ankle"){
-    // segment orientation ω from shank
     const ori = getSegmentOrientationRad(kp, "shank", side);
-    angleRad = isFinite(ori) ? ori : 0;
-    angVel = getAngularVelocityRadS(`driver_seg_shank_${side}`, angleRad, dt);
+    angleRadRaw = isFinite(ori) ? ori : 0;
+    angleKey=`driver_seg_shank_${side}`;
   } else {
     const ang = getJointAngleRad(kp, jName, side);
-    angleRad = isFinite(ang) ? ang : 0;
-    angVel = getAngularVelocityRadS(`driver_joint_${jName}_${side}`, angleRad, dt);
+    angleRadRaw = isFinite(ang) ? ang : 0;
+    angleKey=`driver_joint_${jName}_${side}`;
   }
 
-  const linVel = getLinearVelMps(kp, jName==="wrist" ? "wrist" : (jName==="ankle" ? "ankle" : jName), side);
+  const {angleFilt, omegaFilt} = getFilteredAngleAndOmega(angleKey, angleRadRaw, dt);
 
-  // displacement (integrate)
-  const idx = idxOf(jName==="wrist" ? "wrist" : (jName==="ankle" ? "ankle" : jName), side);
+  const baseJoint = (jName==="wrist") ? "wrist" : (jName==="ankle" ? "ankle" : jName);
+  const linRaw = getLinearVelMpsRaw(kp, baseJoint, side, dt);
+  const {Q:Qv,R:Rv} = kalmanParamsFor("linVel");
+  const linVel = kalman1D(`kal_driver_lin_${baseJoint}_${side}`, linRaw, Qv, Rv);
+
+  // displacement: integrate filtered speed (stable, phase-friendly)
+  driverDisp += Math.abs(linVel) * dt;
+
+  // also keep a geometry-based disp (optional). We'll not double count; keep integration only.
+  const idx = idxOf(baseJoint, side);
   const p = idx!=null ? kp[idx] : null;
   if(p && p.score>0.30){
-    const s=getPxToMeter();
-    if(prevDriverXY){
-      const dx=(p.x-prevDriverXY.x)*s;
-      const dy=(p.y-prevDriverXY.y)*s;
-      driverDisp += Math.hypot(dx,dy);
-    }
     prevDriverXY={x:p.x,y:p.y};
   }
 
   return {
     driver: `${jName}_${side}`,
     linVel,
-    angleRad,
-    angVel,
+    linVelRaw: linRaw,
+    angleRad: angleFilt,
+    angleRadRaw,
+    angVel: omegaFilt,
     disp: driverDisp,
     fpsUsed,
     plane
@@ -1094,7 +1105,7 @@ function computeDriverKinematics(kp, plane){
 }
 
 /* =========================
-   Driver kinetics (smoothed)
+   Driver kinetics (low-pass)
 ========================= */
 function computeDriverKinetics(kin){
   if(!currentParticipant || !kin) return {forceN:0, momentNm:0};
@@ -1113,10 +1124,12 @@ function computeDriverKinetics(kin){
 
   const segMass = currentParticipant.mass * (SEG_MASS[seg] || 0.10);
 
+  // use filtered linVel to compute accel (more stable)
   const prevV = rec.driver_linVel.length ? rec.driver_linVel[rec.driver_linVel.length-1] : kin.linVel;
   const accel = Math.abs(kin.linVel - prevV) / Math.max(1e-4, dt);
   const forceRaw = segMass * accel;
 
+  // use filtered angVel to compute alpha
   const prevW = rec.driver_angVel.length ? rec.driver_angVel[rec.driver_angVel.length-1] : kin.angVel;
   const alpha = (kin.angVel - prevW) / Math.max(1e-4, dt);
 
@@ -1137,97 +1150,76 @@ function estimateSegmentLengthM(seg){
 }
 
 /* =========================
-   Selected metrics (fixed ω)
+   Selected metrics (Kalman)
 ========================= */
 function processSelectedMetrics(kp, plane){
   selectedMetrics.forEach(m=>{
-    const v = computeMetricValue(kp, m);
+    const v = computeMetricValueFiltered(kp, m);
     const el=document.getElementById(`val_${m.id}`);
     if(el) el.innerText = isFinite(v) ? v.toFixed(3) : "--";
   });
 }
-function computeMetricValue(kp, m){
+
+function computeMetricValueFiltered(kp, m){
   const side=m.side;
 
   const fpsUsed = Math.max(1, detectedFPS || parseInt(document.getElementById("fpsSelection").value) || 60);
   const dt = 1/fpsUsed;
 
   if(m.type==="linVel"){
-    return getLinearVelMps(kp, m.joint==="wrist" ? "wrist" : (m.joint==="ankle" ? "ankle" : m.joint), side);
+    const baseJoint = (m.joint==="wrist") ? "wrist" : (m.joint==="ankle" ? "ankle" : m.joint);
+    const raw = getLinearVelMpsRaw(kp, baseJoint, side, dt);
+    const {Q,R} = kalmanParamsFor("linVel");
+    return kalman1D(`kal_m_lin_${baseJoint}_${side}`, raw, Q, R);
   }
 
-  if(m.type==="angle"){
+  if(m.type==="angle" || m.type==="angVel"){
+    let rawRad=0;
+    let key=`m_${m.joint}_${side}`;
     if(m.joint==="wrist"){
       const ori=getSegmentOrientationRad(kp,"forearm",side);
-      return isFinite(ori) ? (ori*180/Math.PI) : NaN;
-    }
-    if(m.joint==="ankle"){
+      rawRad=isFinite(ori)?ori:0;
+      key=`m_seg_forearm_${side}`;
+    } else if(m.joint==="ankle"){
       const ori=getSegmentOrientationRad(kp,"shank",side);
-      return isFinite(ori) ? (ori*180/Math.PI) : NaN;
+      rawRad=isFinite(ori)?ori:0;
+      key=`m_seg_shank_${side}`;
+    } else {
+      const ang=getJointAngleRad(kp,m.joint,side);
+      rawRad=isFinite(ang)?ang:0;
+      key=`m_joint_${m.joint}_${side}`;
     }
-    const ang=getJointAngleRad(kp,m.joint,side);
-    return isFinite(ang) ? (ang*180/Math.PI) : NaN;
+
+    const {angleFilt, omegaFilt} = getFilteredAngleAndOmega(key, rawRad, dt);
+    if(m.type==="angle") return angleFilt;    // radians live + export
+    return omegaFilt;                         // rad/s
   }
 
-  if(m.type==="angVel"){
-    if(m.joint==="wrist"){
-      const ori=getSegmentOrientationRad(kp,"forearm",side);
-      return getAngularVelocityRadS(`m_seg_forearm_${side}`, isFinite(ori)?ori:0, dt);
-    }
-    if(m.joint==="ankle"){
-      const ori=getSegmentOrientationRad(kp,"shank",side);
-      return getAngularVelocityRadS(`m_seg_shank_${side}`, isFinite(ori)?ori:0, dt);
-    }
-    const ang=getJointAngleRad(kp,m.joint,side);
-    return getAngularVelocityRadS(`m_joint_${m.joint}_${side}`, isFinite(ang)?ang:0, dt);
-  }
-
-  return NaN;
+  return 0;
 }
 
 /* =========================
-   Discrete series push + charts
+   Rolling kinetics buffers + chart
 ========================= */
-function pushSeriesContinuous(kin, kinets, proj){
-  const fpsUsed = kin.fpsUsed;
-  const t = series.t.length ? series.t[series.t.length-1] + (1/fpsUsed) : 0;
+function pushRollingKinetics(kinets, fpsUsed){
+  const dt=1/Math.max(1, fpsUsed);
+  const t = rolling.t.length ? rolling.t[rolling.t.length-1] + dt : 0;
+  rolling.t.push(t);
+  rolling.force.push(kinets.forceN||0);
+  rolling.moment.push(kinets.momentNm||0);
 
-  series.t.push(t);
-  series.force.push(kinets.forceN||0);
-  series.moment.push(kinets.momentNm||0);
-
-  series.driver_linVel.push(kin.linVel||0);
-  series.driver_angVel.push(kin.angVel||0);
-  series.driver_angle.push(kin.angleRad||0);
-  series.driver_disp.push(kin.disp||0);
-
-  series.proj_speed.push(proj.speed||0);
-
-  // first selected metric only (for quick plotting)
-  if(selectedMetrics.length){
-    const first=selectedMetrics[0];
-    const val = computeMetricValue(prevKeypoints||[], first);
-    series.selected_metric.push(isFinite(val)?val:0);
-  } else {
-    series.selected_metric.push(0);
-  }
-
-  // trim by window seconds
-  const win=parseInt(document.getElementById("windowSeconds").value);
-  while(series.t.length && series.t[0] < t - win){
-    Object.keys(series).forEach(k=>series[k].shift());
+  // keep last 20 seconds always for visibility
+  const WIN=20;
+  while(rolling.t.length && rolling.t[0] < t - WIN){
+    rolling.t.shift(); rolling.force.shift(); rolling.moment.shift();
   }
 }
-
 function drawChartsThrottled(){
   const now=performance.now()/1000;
   if(now-chartLastDraw < 0.10) return;
   chartLastDraw=now;
-
-  drawDualAxisChart("chartDual", series.t, series.force, series.moment);
-  drawKinematicsChart();
+  drawDualAxisChart("chartDual", rolling.t, rolling.force, rolling.moment);
 }
-
 function drawDualAxisChart(canvasId, tArr, fArr, mArr){
   const c=document.getElementById(canvasId);
   const g=c.getContext("2d");
@@ -1241,9 +1233,9 @@ function drawDualAxisChart(canvasId, tArr, fArr, mArr){
   if(tArr.length<2) return;
   const tMin=tArr[0], tMax=tArr[tArr.length-1];
   const fMax=Math.max(1, maxAbs(fArr));
-  const mMax=Math.max(1, maxAbs(mArr));
+  const mMax=Math.max(1e-6, maxAbs(mArr));
 
-  // Force (blue)
+  // Force
   g.strokeStyle="#667eea"; g.lineWidth=2; g.beginPath();
   for(let i=0;i<tArr.length;i++){
     const x=((tArr[i]-tMin)/(tMax-tMin))*w;
@@ -1252,7 +1244,7 @@ function drawDualAxisChart(canvasId, tArr, fArr, mArr){
   }
   g.stroke();
 
-  // Moment (red)
+  // Moment
   g.strokeStyle="#ef4444"; g.lineWidth=2; g.beginPath();
   for(let i=0;i<tArr.length;i++){
     const x=((tArr[i]-tMin)/(tMax-tMin))*w;
@@ -1268,47 +1260,8 @@ function drawDualAxisChart(canvasId, tArr, fArr, mArr){
   g.fillText(txt, w - g.measureText(txt).width - 10, 14);
 }
 
-function drawKinematicsChart(){
-  const c=document.getElementById("chartKinematics");
-  const g=c.getContext("2d");
-  const w=c.width=c.clientWidth;
-  const h=c.height=c.clientHeight;
-  g.clearRect(0,0,w,h);
-
-  if(series.t.length<2) return;
-
-  const sel=document.getElementById("chartMetricSelect").value;
-  let yArr=series.driver_angVel;
-  let label="Driver ω [rad/s]";
-  if(sel==="driver_linVel"){ yArr=series.driver_linVel; label="Driver v [m/s]"; }
-  if(sel==="driver_angle"){ yArr=series.driver_angle; label="Driver θ [rad]"; }
-  if(sel==="driver_disp"){ yArr=series.driver_disp; label="Driver disp [m]"; }
-  if(sel==="proj_speed"){ yArr=series.proj_speed; label="Projectile speed [m/s]"; }
-  if(sel==="selected_metric"){ yArr=series.selected_metric; label="Selected metric (first)"; }
-
-  document.getElementById("lblKinematics").innerText = `${label} | fps≈${detectedFPS||"-"}`;
-
-  const tMin=series.t[0], tMax=series.t[series.t.length-1];
-  const yMax=Math.max(1e-6, maxAbs(yArr));
-
-  // grid
-  g.strokeStyle="#eee"; g.beginPath(); g.moveTo(0,h/2); g.lineTo(w,h/2); g.stroke();
-
-  g.strokeStyle="#10b981"; g.lineWidth=2; g.beginPath();
-  for(let i=0;i<series.t.length;i++){
-    const x=((series.t[i]-tMin)/(tMax-tMin))*w;
-    const y=h-((yArr[i]/(yMax*1.2))*(h/2)+h/2);
-    if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
-  }
-  g.stroke();
-
-  g.fillStyle="#666"; g.font="12px system-ui";
-  g.fillText(label, 10, 14);
-}
-
 /* =========================
-   Recording (phase-ready)
-   - discrete time by fpsUsed: t = i / fpsUsed
+   Recording
 ========================= */
 function toggleRecording(){
   const btn=document.getElementById("recordBtn");
@@ -1332,6 +1285,7 @@ function toggleRecording(){
     prevProjState=null;
     forceStages=new Array(FILTER_ORDER).fill(0);
     momentStages=new Array(FILTER_ORDER).fill(0);
+    kf.clear();
 
     btn.textContent="Stop Recording";
     btn.className="btn btn-danger";
@@ -1361,9 +1315,9 @@ function recordSample(kin, kinets, proj, plane){
 
   rec.proj_speed.push(proj.speed||0);
 
-  // selected metrics
+  // selected metrics (already Kalman-filtered)
   rec.metricsDefs.forEach(def=>{
-    const v = computeMetricValue(prevKeypoints||[], def);
+    const v = computeMetricValueFiltered(prevKeypoints||[], def);
     rec.metrics[def.id].push(isFinite(v)?v:0);
   });
 
@@ -1371,19 +1325,17 @@ function recordSample(kin, kinets, proj, plane){
 }
 
 /* =========================
-   Phase segmentation
-   - still uses event markers:
-     peak projectile speed & peak driver ω
-   - but summaries are simple avg+peak per metric per phase
+   Phase segmentation (event-based)
+   - markers: peak projectile speed & peak driver ω
 ========================= */
 function segmentPhases(){
   const n=rec.n;
-  if(n<10) return [{name:"Full", i0:0, i1:n-1}];
+  if(n<10) return [{name:"Full", i0:0, i1:n-1, markers:"—"}];
 
   const peakProjIdx = argMax(rec.proj_speed);
   const peakWIdx = argMaxAbs(rec.driver_angVel);
 
-  // simple phase boundaries around events (relative windows)
+  // small windows around events
   const w1 = Math.max(3, Math.floor(n*0.12));
   const w2 = Math.max(3, Math.floor(n*0.10));
 
@@ -1394,10 +1346,10 @@ function segmentPhases(){
   const release1 = clampInt(peakProjIdx + w2, 0, n-1);
 
   return [
-    {name:"Preparation", i0:0, i1:Math.max(0, accel0-1)},
-    {name:"Acceleration", i0:accel0, i1:accel1},
-    {name:"Release/Contact", i0:release0, i1:release1},
-    {name:"Follow-through", i0:Math.min(n-1, release1+1), i1:n-1},
+    {name:"Preparation", i0:0, i1:Math.max(0, accel0-1), markers:`peakω@${peakWIdx}, peakVproj@${peakProjIdx}`},
+    {name:"Acceleration", i0:accel0, i1:accel1, markers:`peakω@${peakWIdx}, peakVproj@${peakProjIdx}`},
+    {name:"Release/Contact", i0:release0, i1:release1, markers:`peakVproj@${peakProjIdx}`},
+    {name:"Follow-through", i0:Math.min(n-1, release1+1), i1:n-1, markers:`—`},
   ];
 }
 function clampInt(x,a,b){ return Math.max(a, Math.min(b, Math.round(x))); }
@@ -1417,16 +1369,132 @@ function argMaxAbs(arr){
   }
   return best;
 }
+function slice(arr, ph){
+  if(!arr||!arr.length) return [];
+  return arr.slice(ph.i0, ph.i1+1);
+}
 
 /* =========================
-   XLSX export:
-   - simple per-phase avg+peak for each selected metric
-   - angles exported in radians
+   Recommendations (phase summary)
+   - simple heuristics based on relative ratios & timing
+========================= */
+function buildPhaseRecommendation(phaseName, stats, global){
+  // stats: {peakProj, peakW, avgW, peakAngle, avgAngle, peakV, avgV, peakF, avgF, peakM, avgM}
+  // global: {peakProjIdx, peakWIdx, n, fps, plane}
+  const recs=[];
+  const flags=[];
+
+  // timing (sequencing)
+  const tProj = global.peakProjIdx / global.fps;
+  const tW = global.peakWIdx / global.fps;
+  const dt = tProj - tW;
+
+  // efficiency ratios
+  const wToProj = (stats.peakW > 1e-6) ? (stats.peakProj / stats.peakW) : 0; // higher means better transfer per ω
+  const forceToProj = (stats.peakF > 1e-6) ? (stats.peakProj / stats.peakF) : 0;
+
+  // thresholds (generic; adjust later if you want sport-specific)
+  const LOW_ANG = 0.6;      // rad (about 34 deg)
+  const HIGH_MOM = 0.06;    // Nm proxy scale can be small; use relative checks too
+  const LOW_W = 2.0;        // rad/s
+  const LOW_PROJ = 2.0;     // m/s
+  const BIG_SEQ = 0.08;     // s
+
+  // phase-specific logic
+  if(phaseName==="Preparation"){
+    if(stats.peakAngle < LOW_ANG){
+      flags.push("Low ROM");
+      recs.push("Increase range-of-motion during wind-up (greater hip/shoulder separation and smoother loading).");
+    }
+    if(stats.avgW > stats.peakW*0.85 && stats.peakW>0){
+      flags.push("Early high ω");
+      recs.push("Avoid spinning up too early; keep a controlled load then accelerate later.");
+    }
+  }
+
+  if(phaseName==="Acceleration"){
+    if(stats.peakW < LOW_W && stats.peakProj > LOW_PROJ){
+      flags.push("Push-like transfer");
+      recs.push("Projectile speed relies more on translation than rotation. Train rotational sequencing (proximal-to-distal) and faster segment ω.");
+    }
+    if(stats.peakW >= LOW_W && stats.peakProj < LOW_PROJ){
+      flags.push("Throw-like but low release speed");
+      recs.push("Good rotational intent but poor transfer to projectile. Check timing, stiffness, and release mechanics.");
+    }
+    if(Math.abs(dt) > BIG_SEQ){
+      flags.push("Sequencing offset");
+      if(dt > 0){
+        recs.push("Peak projectile speed occurs after peak ω: consider maintaining angular acceleration closer to release (later peak ω).");
+      } else {
+        recs.push("Peak projectile speed occurs before peak ω: avoid 'late whip' without transfer; aim for earlier transfer to projectile.");
+      }
+    }
+    if(wToProj < 0.6 && stats.peakW>LOW_W){
+      flags.push("Energy leak");
+      recs.push("High ω but limited projectile speed gain. Consider trunk control, scapular stability, and a cleaner kinetic chain.");
+    }
+  }
+
+  if(phaseName==="Release/Contact"){
+    if(stats.peakF > (global.peakFAll*0.85) && stats.peakProj < (global.peakProjAll*0.85)){
+      flags.push("High force, low speed");
+      recs.push("High force near release but low projectile speed suggests inefficiency—improve technique and stiffness at release.");
+    }
+    if(stats.peakM > (global.peakMAll*0.85) && stats.peakProj < (global.peakProjAll*0.85)){
+      flags.push("High moment, low speed");
+      recs.push("Excess torque without output—reduce joint stress by improving timing and reducing braking at the limb.");
+    }
+  }
+
+  if(phaseName==="Follow-through"){
+    if(stats.peakM > (global.peakMAll*0.90) && stats.avgProjDropFast){
+      flags.push("Abrupt decel");
+      recs.push("Abrupt deceleration: work on follow-through and eccentric control to reduce joint loading.");
+    }
+    if(stats.avgW > (global.avgWAll*1.1)){
+      flags.push("Residual high ω");
+      recs.push("Residual high ω in follow-through: add deceleration drills and trunk control to safely dissipate energy.");
+    }
+  }
+
+  // plane-aware hint (light)
+  if(global.plane==="frontal" && (phaseName==="Acceleration" || phaseName==="Release/Contact")){
+    recs.push("Frontal view: watch lateral sway and pelvic drop; keep COM stable and avoid side-bending during force transfer.");
+  }
+  if(global.plane==="sagittal" && (phaseName==="Acceleration" || phaseName==="Release/Contact")){
+    recs.push("Sagittal view: watch over-striding/early braking and trunk collapse; keep stiffness and stack trunk over base.");
+  }
+
+  // fallback
+  if(!recs.length){
+    flags.push("No major flags");
+    recs.push("Maintain current pattern. Aim for smooth load → strong acceleration → clean transfer → controlled follow-through.");
+  }
+
+  return { flags: flags.join("; "), recommendation: recs.join(" ") };
+}
+
+/* =========================
+   XLSX export with recommendations
 ========================= */
 function downloadData(){
   if(!rec.n) return showStatus("No recorded data.", "error");
 
   const phases=segmentPhases();
+
+  // global markers
+  const peakProjIdx = argMax(rec.proj_speed);
+  const peakWIdx = argMaxAbs(rec.driver_angVel);
+  const peakFAll = maxAbs(rec.forceN);
+  const peakMAll = maxAbs(rec.momentNm);
+  const peakProjAll = maxAbs(rec.proj_speed);
+  const avgWAll = mean(rec.driver_angVel);
+
+  const globalCtx = {
+    peakProjIdx, peakWIdx, n: rec.n, fps: rec.fpsUsed,
+    plane: rec.plane,
+    peakFAll, peakMAll, peakProjAll, avgWAll
+  };
 
   // profile
   const p=currentParticipant||{};
@@ -1440,60 +1508,117 @@ function downloadData(){
     {field:"driver", value:rec.driver},
     {field:"fps_used", value:rec.fpsUsed},
     {field:"samples", value:rec.n},
-    {field:"note", value:"ω [rad/s]. Angles exported in [rad]. For wrist/ankle, ω derived from segment orientation."}
+    {field:"event_marker_peak_proj_speed_sample", value:peakProjIdx},
+    {field:"event_marker_peak_driver_angVel_sample", value:peakWIdx},
+    {field:"notes", value:"Kinematics Kalman-filtered. ω [rad/s]. Angles [rad]. Kinetics low-pass filtered (cascaded) for smooth force-time / moment-time."}
   ];
 
-  // summary rows
+  // phase summary rows
   const rows=[];
   phases.forEach(ph=>{
-    // driver summary
+    const driverV = slice(rec.driver_linVel, ph);
+    const driverW = slice(rec.driver_angVel, ph);
+    const driverA = slice(rec.driver_angle, ph);
+    const driverD = slice(rec.driver_disp, ph);
+    const projSp  = slice(rec.proj_speed, ph);
+    const fArr    = slice(rec.forceN, ph);
+    const mArr    = slice(rec.momentNm, ph);
+
+    const stats = {
+      peakProj: maxAbs(projSp),
+      peakW: maxAbs(driverW),
+      avgW: mean(driverW),
+      peakAngle: maxAbs(driverA),
+      avgAngle: mean(driverA),
+      peakV: maxAbs(driverV),
+      avgV: mean(driverV),
+      peakF: maxAbs(fArr),
+      avgF: mean(fArr),
+      peakM: maxAbs(mArr),
+      avgM: mean(mArr),
+      // simple "drop fast" heuristic for follow-through:
+      avgProjDropFast: (ph.name==="Follow-through" && projSp.length>2) ? (projSp[0] - projSp[projSp.length-1] > globalCtx.peakProjAll*0.35) : false
+    };
+
+    const recText = buildPhaseRecommendation(ph.name, stats, globalCtx);
+
+    // driver and projectile summary
     rows.push({
       phase: ph.name,
+      markers: ph.markers || "",
       metric: "driver_linVel [m/s]",
-      avg: round(mean(slice(rec.driver_linVel, ph)), 6),
-      peak: round(maxAbs(slice(rec.driver_linVel, ph)), 6)
+      avg: round(mean(driverV), 6),
+      peak: round(maxAbs(driverV), 6),
+      flags: "",
+      recommendation: ""
     });
     rows.push({
       phase: ph.name,
+      markers: ph.markers || "",
       metric: "driver_angVel [rad/s]",
-      avg: round(mean(slice(rec.driver_angVel, ph)), 6),
-      peak: round(maxAbs(slice(rec.driver_angVel, ph)), 6)
+      avg: round(mean(driverW), 6),
+      peak: round(maxAbs(driverW), 6),
+      flags: "",
+      recommendation: ""
     });
     rows.push({
       phase: ph.name,
+      markers: ph.markers || "",
       metric: "driver_angle [rad]",
-      avg: round(mean(slice(rec.driver_angle, ph)), 6),
-      peak: round(maxAbs(slice(rec.driver_angle, ph)), 6)
+      avg: round(mean(driverA), 6),
+      peak: round(maxAbs(driverA), 6),
+      flags: "",
+      recommendation: ""
     });
     rows.push({
       phase: ph.name,
+      markers: ph.markers || "",
       metric: "driver_disp [m]",
-      avg: round(mean(slice(rec.driver_disp, ph)), 6),
-      peak: round(maxAbs(slice(rec.driver_disp, ph)), 6)
+      avg: round(mean(driverD), 6),
+      peak: round(maxAbs(driverD), 6),
+      flags: "",
+      recommendation: ""
     });
     rows.push({
       phase: ph.name,
+      markers: ph.markers || "",
       metric: "projectile_speed [m/s]",
-      avg: round(mean(slice(rec.proj_speed, ph)), 6),
-      peak: round(maxAbs(slice(rec.proj_speed, ph)), 6)
+      avg: round(mean(projSp), 6),
+      peak: round(maxAbs(projSp), 6),
+      flags: recText.flags,
+      recommendation: recText.recommendation
+    });
+    rows.push({
+      phase: ph.name,
+      markers: ph.markers || "",
+      metric: "Force [N] (filtered)",
+      avg: round(mean(fArr), 6),
+      peak: round(maxAbs(fArr), 6),
+      flags: "",
+      recommendation: ""
+    });
+    rows.push({
+      phase: ph.name,
+      markers: ph.markers || "",
+      metric: "Moment [Nm] (filtered)",
+      avg: round(mean(mArr), 8),
+      peak: round(maxAbs(mArr), 8),
+      flags: "",
+      recommendation: ""
     });
 
-    // selected metrics
+    // selected metrics summary (all)
     rec.metricsDefs.forEach(def=>{
-      const raw = slice(rec.metrics[def.id], ph);
-      let arr = raw;
-      let unit = unitsFor(def);
-
-      // convert angles deg -> rad for export
-      if(def.type==="angle"){
-        arr = raw.map(x => (x||0) * Math.PI/180);
-        unit = "[rad]";
-      }
+      const arr = slice(rec.metrics[def.id], ph);
+      const unit = unitsFor(def);
       rows.push({
         phase: ph.name,
+        markers: ph.markers || "",
         metric: `${def.type}_${def.joint}_${def.side} ${unit}`,
         avg: round(mean(arr), 6),
-        peak: round(maxAbs(arr), 6)
+        peak: round(maxAbs(arr), 6),
+        flags: "",
+        recommendation: ""
       });
     });
   });
@@ -1504,19 +1629,19 @@ function downloadData(){
     const r={
       sample: i,
       time_s: round(rec.t[i], 6),
-      "Force[N]": round(rec.forceN[i]||0, 6),
-      "Moment[Nm]": round(rec.momentNm[i]||0, 8),
-      "driver_linVel[m/s]": round(rec.driver_linVel[i]||0, 6),
-      "driver_angVel[rad/s]": round(rec.driver_angVel[i]||0, 6),
-      "driver_angle[rad]": round(rec.driver_angle[i]||0, 6),
-      "driver_disp[m]": round(rec.driver_disp[i]||0, 6),
-      "proj_speed[m/s]": round(rec.proj_speed[i]||0, 6),
+      "Force[N](filt)": round(rec.forceN[i]||0, 6),
+      "Moment[Nm](filt)": round(rec.momentNm[i]||0, 8),
+      "driver_linVel[m/s](kal)": round(rec.driver_linVel[i]||0, 6),
+      "driver_angVel[rad/s](kal)": round(rec.driver_angVel[i]||0, 6),
+      "driver_angle[rad](kal)": round(rec.driver_angle[i]||0, 6),
+      "driver_disp[m](int)": round(rec.driver_disp[i]||0, 6),
+      "proj_speed[m/s](kal)": round(rec.proj_speed[i]||0, 6),
     };
 
     // selected metrics full series
     rec.metricsDefs.forEach(def=>{
       const val = (rec.metrics[def.id] && rec.metrics[def.id][i]!=null) ? rec.metrics[def.id][i] : 0;
-      if(def.type==="angle") r[`${def.id}[rad]`] = round((val*Math.PI/180), 6);
+      if(def.type==="angle") r[`${def.id}[rad]`] = round(val, 6);
       else if(def.type==="angVel") r[`${def.id}[rad/s]`] = round(val, 6);
       else r[`${def.id}[m/s]`] = round(val, 6);
     });
@@ -1530,23 +1655,18 @@ function downloadData(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ts), "3_TimeSeries");
 
   XLSX.writeFile(wb, `analysis_${(p.name||"participant").replace(/\s+/g,"_")}_${Date.now()}.xlsx`);
-  showStatus("Exported XLSX (phase avg+peak + discrete time-series).", "success");
-}
-
-function slice(arr, ph){
-  if(!arr||!arr.length) return [];
-  return arr.slice(ph.i0, ph.i1+1);
-}
-function unitsFor(def){
-  if(def.type==="linVel") return "[m/s]";
-  if(def.type==="angVel") return "[rad/s]";
-  if(def.type==="angle") return "[deg]"; // exported as rad in XLSX
-  return "";
+  showStatus("Exported XLSX (Phase Summary includes recommendations).", "success");
 }
 
 /* =========================
    UI metric selection
 ========================= */
+function unitsFor(def){
+  if(def.type==="linVel") return "[m/s]";
+  if(def.type==="angVel") return "[rad/s]";
+  if(def.type==="angle") return "[rad]";
+  return "";
+}
 function addMetric(){
   const type=document.getElementById('metricType').value;
   const joint=document.getElementById('metricJoint').value;
@@ -1567,7 +1687,7 @@ function renderMetricChips(){
   selectedMetrics.forEach(m=>{
     const label = (m.type==="angVel") ? `${m.type} ${m.joint} ${m.side} [rad/s]`
                  : (m.type==="linVel") ? `${m.type} ${m.joint} ${m.side} [m/s]`
-                 : `${m.type} ${m.joint} ${m.side} [deg]`;
+                 : `${m.type} ${m.joint} ${m.side} [rad]`;
 
     const chip=document.createElement('div');
     chip.className="chip";
@@ -1585,9 +1705,9 @@ function renderMetricChips(){
   });
 }
 function metricHint(m){
-  if(m.type==="linVel") return "Linear velocity [m/s] from frame-to-frame displacement.";
-  if(m.type==="angVel") return "Angular velocity [rad/s] (joint angle or segment orientation).";
-  if(m.type==="angle") return "Displayed [deg] live; exported as [rad] in XLSX.";
+  if(m.type==="linVel") return "Kalman-filtered linear velocity [m/s].";
+  if(m.type==="angVel") return "Kalman-filtered angular velocity [rad/s] derived from filtered angle.";
+  if(m.type==="angle") return "Kalman-filtered angle [rad].";
   return "";
 }
 
