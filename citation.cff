@@ -1,12 +1,14 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 authors:
-  - family-names: Ng
-    given-names: Jun Wei
-    orcid: https://orcid.org/my-orcid?orcid=0000-0001-8634-1938
-title: "Sportmotion Analysis"
-version: 1.0.1
-identifiers:
-  - type: doi
-    value: 10.5281/zenodo.1234
-date-released: 2025-12-20
+- family-names: "Ng"
+  given-names: "Jun Wei"
+  orcid: "https://orcid.org/0000-0001-8634-1938"
+- family-names: ""
+  given-names: ""
+  orcid: ""
+title: "Sport Motion Analysis"
+version: 1.0.0
+url: https://ngjunwei777.github.io/Mocap_sportmotion-analysis/
+date-released: 2026-01-05
+url: "https://ngjunwei777.github.io/Mocap_sportmotion-analysis/"
